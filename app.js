@@ -1294,7 +1294,8 @@ const { camposConAlerta, evaluarPropuesta, valorActual } = require('./correccion
 //   hojaLocal() -> { texto, fecha } | null      planilla guardada solo en ese equipo (versión antigua)
 //   ejemplo() -> texto | null                   datos de ejemplo cuando no hay planilla
 //   descargarHoja(url) -> texto                 cómo se baja la planilla de Google
-//   logo() -> bytes | null                      logo para la carta
+//   logo() -> bytes | null                      logo de AMAGRO (hoy no se usa: la carta de solicitud la firma la postulante, así que va sin logo;
+//                                               queda para la futura carta de bienvenida)
 //   carta { generarCarta, nombreArchivo }       generador del PDF de la carta
 //   migracion { pendientes() -> obj | null, hecho() }   correcciones que quedaron en el equipo de antes
 //   copiaLocal(ediciones) / copias() -> n       copia de seguridad antes de restaurar un respaldo
@@ -1500,7 +1501,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!paginaSubida()) return fallo(400, 'Falta configurar la dirección de la página de subida (paginaSubida).');
       if (!E.carta) return fallo(501, 'Este equipo no puede preparar la carta.');
       // La carta ya completada queda lista para que la persona la descargue desde la propia página de subida.
-      await almacen.prepararCarta(clave, await E.carta.generarCarta(registro, { fecha: fecha === true, logo: await E.logo() }));
+      await almacen.prepararCarta(clave, await E.carta.generarCarta(registro, { fecha: fecha === true }));
       const e = await almacen.crearEnlace(clave, 30);
       return ok({ url: urlPagina(`/#${e.token}`), vence_en: e.vence_en });
     }
@@ -1657,7 +1658,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       const registro = await buscarRegistro(clave);
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!E.carta) return fallo(501, 'Este equipo no puede preparar la carta.');
-      return { estado: 200, bytes: await E.carta.generarCarta(registro, { fecha: fecha === true, logo: await E.logo() }), tipo: 'application/pdf',
+      return { estado: 200, bytes: await E.carta.generarCarta(registro, { fecha: fecha === true }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': `attachment; filename="${E.carta.nombreArchivo(registro.nombre)}"`, 'Cache-Control': 'no-store' } };
     }
 
