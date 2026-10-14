@@ -24,6 +24,7 @@ function cargar(resp, conservar) {
   pasosDef = resp.pasosDef || pasosDef;
   subidaDisponible = !!resp.paginaSubida;
   correoEnvio = resp.correoEnvio || '';
+  urlApp = resp.urlApp || '';
   plazoRespuesta = resp.plazoRespuestaDias || plazoRespuesta;
   $('hojaUrl').value = resp.hojaUrl || '';
   $('fuente').innerHTML = 'Fuente: ' + (resp.fuente.includes('EJEMPLO') ? '<b>' + esc(resp.fuente) + '</b>' : esc(resp.fuente));
@@ -159,6 +160,7 @@ function puntosPasos(d) {
 }
 
 let pasosDef = [];       // lista de pasos, la entrega el servidor
+let urlApp = '';             // dirección pública de la aplicación (la define supabase/proyecto.json)
 let correoEnvio = '';        // cuenta de Gmail desde la que se envían los correos (la define supabase/proyecto.json)
 let subidaDisponible = false; // ¿está configurada la página donde la postulante sube sus documentos?
 let plazoRespuesta = 15; // días sin respuesta a la carta antes de avisar
@@ -1280,24 +1282,37 @@ async function cargarUsuarias() {
       '<td><button class="sec btn-peq" data-usuaria-clave>Restablecer contraseña</button></td></tr>').join('') + '</tbody></table>' +
     (j.sinPerfil.length ? '<p class="sub">Cuentas sin categoría (no pueden entrar): ' + j.sinPerfil.map(u => esc(u.correo)).join(', ') + '</p>' : '');
 }
-function mostrarClaveTemporal(nombre, correo, clave) {
+let invitacionPendiente = null; // a quién se le acaba de crear la cuenta o restablecer la clave
+function mostrarClaveTemporal(nombre, correo, clave, { rol, nueva = true } = {}) {
+  invitacionPendiente = { nombre, correo, rol, nueva };
   const caja = $('claveTemporalCaja');
-  caja.innerHTML = '<b>Contraseña temporal de ' + esc(nombre) + '</b> (' + esc(correo) + '): <span class="clave-temporal">' + esc(clave) + '</span> <button class="btn-peq" id="copiarClaveTemporal">Copiar</button><br><small>Se muestra una sola vez. Entrégasela por un medio seguro (en persona o por llamada, no en un chat grupal). Deberá cambiarla al ingresar. Al cerrar este panel no se podrá volver a ver; si se pierde, se restablece.</small>';
+  caja.innerHTML = '<b>Contraseña temporal de ' + esc(nombre) + '</b> (' + esc(correo) + '): <span class="clave-temporal">' + esc(clave) + '</span> <button class="btn-peq" id="copiarClaveTemporal">Copiar</button> <button class="sec btn-peq" id="invitarPorCorreo" title="Abre Gmail con la invitación ya escrita (la contraseña NO va en el correo)">✉ Preparar correo de invitación</button><br><small>Se muestra una sola vez. Entrégasela por un medio seguro (en persona o por llamada, no en un chat grupal). Deberá cambiarla al ingresar. Al cerrar este panel no se podrá volver a ver; si se pierde, se restablece.</small>';
   caja.hidden = false;
+  $('invitarPorCorreo').addEventListener('click', invitarPorCorreo);
   $('copiarClaveTemporal').addEventListener('click', async () => mostrar((await copiarTexto(clave)) ? 'Contraseña copiada.' : 'No se pudo copiar: selecciónala y presiona Ctrl+C.', false));
+}
+// Abre Gmail con el aviso a la persona (dirección de la aplicación e instrucciones; sin la contraseña, que se entrega aparte).
+function invitarPorCorreo() {
+  const i = invitacionPendiente;
+  if (!i) return;
+  const url = urlApp || (location.origin + location.pathname.replace(/index\.html$/, ''));
+  const m = construirInvitacion({ nombre: i.nombre, correo: i.correo, rol: i.rol, url, nueva: i.nueva, firma: (usuarioActual && usuarioActual.nombre) || undefined });
+  const ventana = window.open(urlGmail({ destinatario: m.destinatario, asunto: m.asunto, cuerpo: m.cuerpo, cuenta: correoEnvio }), '_blank');
+  if (ventana) ventana.opener = null;
+  else mostrar('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
 }
 $('verUsuarias').addEventListener('click', () => { cerrarMenu(); $('claveTemporalCaja').hidden = true; if (alternarPanel('panelUsuarias')) { cargarUsuarias(); cargarSugerencias(); } });
 $('formNuevaUsuaria').addEventListener('submit', async e => {
   e.preventDefault();
   $('nuCrear').disabled = true;
-  const nombre = $('nuNombre').value, correo = $('nuCorreo').value;
-  const r = await post('/api/usuarios/crear', { nombre, correo, rol: $('nuRol').value });
+  const nombre = $('nuNombre').value, correo = $('nuCorreo').value, rolElegido = $('nuRol').value;
+  const r = await post('/api/usuarios/crear', { nombre, correo, rol: rolElegido });
   $('nuCrear').disabled = false;
   if (r.error) return mostrar(r.error, true);
   $('formNuevaUsuaria').reset();
   $('nuCorreo').dataset.auto = '0';
   cargarSugerencias();
-  mostrarClaveTemporal(nombre, r.correo, r.clave);
+  mostrarClaveTemporal(nombre, r.correo, r.clave, { rol: rolElegido, nueva: true });
   await cargarUsuarias();
 });
 $('usuariasLista').addEventListener('change', async e => {
@@ -1321,7 +1336,7 @@ $('usuariasLista').addEventListener('click', async e => {
     if (!confirm('¿Restablecer la contraseña de ' + nombre + '? La anterior dejará de servir y se generará una temporal.')) return;
     const r = await post('/api/usuarios/clave', { id });
     if (r.error) return mostrar(r.error, true);
-    mostrarClaveTemporal(nombre, correo, r.clave);
+    mostrarClaveTemporal(nombre, correo, r.clave, { rol: fila.querySelector('[data-usuaria-rol]').value, nueva: false });
     await cargarUsuarias();
   }
 });

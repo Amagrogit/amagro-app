@@ -1370,6 +1370,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       usuario: sesion.publico,
       paginaSubida: !!paginaSubida(),
       correoEnvio: (proyecto && proyecto.correoEnvio) || '',
+      urlApp: (proyecto && proyecto.urlApp) || '',
       ...r,
     };
   }
@@ -2110,7 +2111,7 @@ function iniciarAdaptador(req) {
 
   const sesion = new Sesion({ url: cfg.url, clave: cfg.clavePublica, persistencia });
   const almacen = new Almacen(sesion);
-  const proyecto = { url: cfg.url, clave: cfg.clavePublica, paginaSubida: cfg.paginaSubida || '', correoEnvio: cfg.correoEnvio || '' };
+  const proyecto = { url: cfg.url, clave: cfg.clavePublica, paginaSubida: cfg.paginaSubida || '', correoEnvio: cfg.correoEnvio || '', urlApp: cfg.urlApp || '' };
 
   // El logo del PDF se convierte a JPEG (el PDF lo incrusta tal cual, sin necesitar descomprimir nada).
   let logo;

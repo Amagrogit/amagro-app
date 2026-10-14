@@ -118,7 +118,45 @@
     return 'https://mail.google.com/mail/?' + q.map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   }
 
-  const api = { construirMensaje, construirCorreoCarta, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
+  // Correo para avisarle a alguien que se le creó una cuenta (o que se le restableció la contraseña). NO lleva la contraseña
+  // temporal: esa se entrega por otro medio (en persona o por llamada), para que el correo solo no baste para entrar.
+  const CATEGORIAS = {
+    admin: ['administradora', 'puedes ver y trabajar todas las postulaciones y, además, crear cuentas, importar planillas y restaurar respaldos.'],
+    secretaria: ['secretaria', 'puedes ver y trabajar las postulaciones: corregir datos, marcar pasos, enviar enlaces y correos, y revisar los documentos recibidos.'],
+    directiva: ['directiva (solo consulta)', 'puedes consultar el listado, las fichas, el historial y las cartas firmadas (no los carnets), pero no modificas nada.'],
+  };
+  function construirInvitacion({ nombre, correo, rol, url, nueva = true, firma = '[Nombre de quien envía]' }) {
+    const primer = capitalizar(String(nombre || '').trim().split(/\s+/)[0]) || 'hola';
+    const [etiqueta, permisos] = CATEGORIAS[rol] || ['usuaria', 'puedes usar la aplicación.'];
+    const comun = [
+      `Dirección: ${url}`,
+      `Usuario: ${correo} (este mismo correo)`,
+      'Contraseña: una temporal que te entrego por otro medio (en persona o por llamada). Al ingresar, la aplicación te pedirá elegir una propia, que solo tú conocerás.',
+      '',
+      'Un consejo: guarda tu contraseña en un gestor de contraseñas y no la compartas con nadie. Nunca te la pediremos por correo ni por mensaje.',
+      '',
+      'Si tienes dudas, escríbeme.',
+      '',
+      'Saludos cordiales,',
+      firma,
+      'AMAGRO AG',
+    ];
+    return {
+      destinatario: correo,
+      asunto: nueva ? 'AMAGRO AG · Te invitamos a la aplicación de gestión de socias' : 'AMAGRO AG · Nueva contraseña temporal para la aplicación',
+      cuerpo: [
+        `Hola ${primer},`,
+        '',
+        ...(nueva
+          ? [`Te creé una cuenta en la aplicación de AMAGRO AG, donde se gestionan las postulaciones y las socias. Tu categoría es ${etiqueta}: ${permisos}`]
+          : ['Restablecí tu contraseña de la aplicación de AMAGRO AG. La anterior ya no sirve.']),
+        '',
+        ...comun,
+      ].join('\n'),
+    };
+  }
+
+  const api = { construirMensaje, construirCorreoCarta, construirInvitacion, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(raiz, api);
 })(typeof window !== 'undefined' ? window : globalThis);
