@@ -1285,11 +1285,12 @@ async function cargarUsuarias() {
   cuentasExistentes = j.usuarios;
   caja.innerHTML = '<table class="tabla-usuarias"><thead><tr><th>Nombre</th><th>Correo</th><th>Categoría</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>' +
     j.usuarios.map(u => '<tr data-usuaria="' + esc(u.id) + '"><td>' + esc(u.nombre) + (u.cambiarClave ? ' <span class="chip" title="Aún no cambia su contraseña temporal">clave temporal</span>' : '') + '</td><td>' + esc(u.correo) + '</td>' +
-      '<td><select data-usuaria-rol>' + Object.entries(NOMBRE_ROL).map(([k, v]) => '<option value="' + k + '"' + (k === u.rol ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></td>' +
+      '<td><select data-usuaria-rol data-previo="' + esc(u.rol) + '">' + Object.entries(NOMBRE_ROL).map(([k, v]) => '<option value="' + k + '"' + (k === u.rol ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></td>' +
       '<td>' + (u.activo ? 'Activa' : '<b style="color:var(--alerta)">Desactivada</b>') + ' <button class="sec btn-peq" data-usuaria-activo="' + (u.activo ? '0' : '1') + '">' + (u.activo ? 'Desactivar' : 'Activar') + '</button></td>' +
       '<td>' + (u.ultimoIngreso ? esc(fechaHoraCL(u.ultimoIngreso)) : '<span class="sub">nunca</span>') + '</td>' +
       '<td><button class="sec btn-peq" data-usuaria-clave>Restablecer contraseña</button></td></tr>').join('') + '</tbody></table>' +
     (j.sinPerfil.length ? '<p class="sub">Cuentas sin categoría (no pueden entrar): ' + j.sinPerfil.map(u => esc(u.correo)).join(', ') + '</p>' : '');
+  cargarRegistroCuentas();
 }
 let invitacionPendiente = null; // a quién se le acaba de crear la cuenta o restablecer la clave
 function mostrarClaveTemporal(nombre, correo, clave, { rol, nueva = true } = {}) {
@@ -1326,11 +1327,33 @@ $('formNuevaUsuaria').addEventListener('submit', async e => {
 });
 $('usuariasLista').addEventListener('change', async e => {
   const sel = e.target.closest('[data-usuaria-rol]'); if (!sel) return;
-  const id = sel.closest('[data-usuaria]').dataset.usuaria;
-  const r = await post('/api/usuarios/perfil', { id, rol: sel.value });
-  if (r.error) mostrar(r.error, true); else mostrar('Categoría cambiada.');
+  const fila = sel.closest('[data-usuaria]'), id = fila.dataset.usuaria;
+  const nombre = fila.children[0].firstChild.textContent.trim();
+  const antes = sel.dataset.previo, ahora = sel.value;
+  if (antes === ahora) return;
+  const extra = antes === 'admin' ? ' Dejará de poder crear cuentas y cambiar la configuración.' : ahora === 'admin' ? ' Podrá crear cuentas, importar planillas y restaurar respaldos.' : ahora === 'directiva' ? ' Pasará a solo consulta: no podrá modificar nada.' : '';
+  if (!confirm('¿Cambiar a ' + nombre + ' de «' + NOMBRE_ROL[antes] + '» a «' + NOMBRE_ROL[ahora] + '»?' + extra + '\n\nSe aplica de inmediato y queda registrado.')) { sel.value = antes; return; }
+  sel.disabled = true;
+  const r = await post('/api/usuarios/perfil', { id, rol: ahora });
+  if (r.error) mostrar(r.error, true); else mostrar('Categoría de ' + nombre + ' cambiada a ' + NOMBRE_ROL[ahora] + '.');
   await cargarUsuarias();
 });
+const ETIQUETA_CUENTA = { crear: 'creó la cuenta de', categoria: 'cambió la categoría de', activar: 'activó la cuenta de', desactivar: 'desactivó la cuenta de', nombre: 'cambió el nombre de', clave: 'restableció la contraseña de' };
+async function cargarRegistroCuentas() {
+  const caja = $('registroCuentas');
+  try {
+    const j = await (await fetch('/api/usuarios/registro')).json();
+    if (!j.registro) { caja.textContent = j.error || 'No se pudo cargar el registro.'; return; }
+    caja.innerHTML = j.registro.length ? j.registro.map(h => {
+      const d = h.detalle || {};
+      const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+      const extra = h.accion === 'categoria' ? ' (' + (NOMBRE_ROL[d.antes] || d.antes) + ' → ' + (NOMBRE_ROL[d.despues] || d.despues) + ')'
+        : h.accion === 'crear' ? ' (' + (NOMBRE_ROL[d.rol] || d.rol || '') + ')'
+        : h.accion === 'nombre' ? ' (antes: ' + (d.antes || '') + ')' : '';
+      return '<div class="hist-fila"><span class="quien">' + esc(h.usuario_nombre || 'Alguien') + '</span> · ' + esc(cuando) + '<br>' + esc(ETIQUETA_CUENTA[h.accion] || h.accion) + ' <b>' + esc(h.objetivo_nombre || '') + '</b>' + esc(extra) + '</div>';
+    }).join('') : 'Todavía no hay movimientos registrados.';
+  } catch { caja.textContent = 'No se pudo cargar el registro.'; }
+}
 $('usuariasLista').addEventListener('click', async e => {
   const fila = e.target.closest('[data-usuaria]'); if (!fila) return;
   const id = fila.dataset.usuaria, nombre = fila.children[0].firstChild.textContent.trim(), correo = fila.children[1].textContent;

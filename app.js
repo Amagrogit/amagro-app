@@ -983,6 +983,12 @@ class Almacen {
   crearUsuario({ correo, nombre, rol }) { return this.sesion.funcion('documentos', { accion: 'usuarios_crear', correo, nombre, rol }); }
   restablecerClave(id) { return this.sesion.funcion('documentos', { accion: 'usuarios_restablecer', id }); }
 
+  // Últimos movimientos de cuentas (quién hizo qué con quién). Solo la administradora puede leerlo.
+  async registroCuentas(limite = 100) {
+    const { datos } = await this.sesion.pedir('GET', `registro_cuentas?select=creado_en,usuario_nombre,objetivo_nombre,accion,detalle&order=creado_en.desc&limit=${Math.min(Math.max(limite | 0, 1), 500)}`);
+    return Array.isArray(datos) ? datos : [];
+  }
+
   // Cambia la categoría, el nombre o si la cuenta está activa. Los permisos los decide la base de datos.
   async cambiarPerfil(id, cambios) {
     const { datos } = await this.sesion.pedir('PATCH', `perfiles?id=eq.${filtro(id)}`, { cuerpo: cambios, prefer: 'return=representation' });
@@ -1421,6 +1427,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     if (url.startsWith('/api/usuarios')) {
       if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede administrar usuarias.');
       if (ruta === 'GET /api/usuarios') return ok(await almacen.usuarios());
+      if (ruta === 'GET /api/usuarios/registro') return ok({ registro: await almacen.registroCuentas() });
       const a = analizar(cuerpo); if (a.error) return a.error;
       const c = a.cuerpo || {};
       if (ruta === 'POST /api/usuarios/crear') return ok(await almacen.crearUsuario(c));
