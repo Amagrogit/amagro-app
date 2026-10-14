@@ -1218,24 +1218,52 @@ $('formCambioClave').addEventListener('submit', async e => {
 let cuentasExistentes = [], sugeridas = [];
 function cargarSugerencias() {
   sugeridas = Sugerencias.personas(datos, { todas: $('nuTodas').checked });
-  $('nuSugerencias').innerHTML = sugeridas.map(p => '<option value="' + esc(p.nombre) + '" label="' + esc(p.correo) + '"></option>').join('');
-  $('nuAyuda').textContent = sugeridas.length ? sugeridas.length + ' personas disponibles para elegir.' : 'No hay personas cargadas para sugerir: escribe el nombre y el correo a mano.';
+  $('nuAyuda').textContent = sugeridas.length ? sugeridas.length + ' personas disponibles: escribe una parte del nombre y elige de la lista.' : 'No hay personas cargadas para sugerir: escribe el nombre y el correo a mano.';
+  ocultarLista();
 }
-function revisarElegida() {
-  const p = Sugerencias.buscar(sugeridas, $('nuNombre').value);
+let posibles = [], activa = -1;
+function ocultarLista() { $('nuLista').hidden = true; $('nuNombre').setAttribute('aria-expanded', 'false'); activa = -1; }
+function mostrarLista() {
+  posibles = Sugerencias.filtrar(sugeridas, $('nuNombre').value);
+  const caja = $('nuLista');
+  if (Sugerencias.clave($('nuNombre').value).replace(/ /g, '').length < 2) return ocultarLista(); // con una sola letra aún no se propone nada
+  caja.innerHTML = posibles.length
+    ? posibles.map((p, i) => '<button type="button" role="option" data-sug="' + i + '">' + esc(p.nombre) + ' <small>· ' + esc(p.correo || 'sin correo') + '</small></button>').join('')
+    : '<div class="sin">Nadie coincide en la lista. Escribe el nombre y el correo a mano.</div>';
+  activa = -1; caja.hidden = false; $('nuNombre').setAttribute('aria-expanded', 'true');
+}
+function elegirPersona(p) {
+  $('nuNombre').value = p.nombre;
   const correo = $('nuCorreo');
-  if (p) {
-    $('nuNombre').value = p.nombre;
-    if (!correo.value || correo.dataset.auto === '1') { correo.value = p.correo; correo.dataset.auto = '1'; }
-    $('nuAyuda').textContent = 'Elegida de la lista (fila ' + p.fila + '). Revisa el correo: es el que dejó en el formulario, y puede ser otro el que quieras usar.';
-  }
+  if (!correo.value || correo.dataset.auto === '1') { correo.value = p.correo; correo.dataset.auto = '1'; }
+  $('nuAyuda').textContent = 'Elegida de la lista (fila ' + p.fila + '). Revisa el correo: es el que dejó en el formulario, y puede ser otro el que quieras usar.';
+  ocultarLista();
+  revisarElegida(true);
+  (correo.value ? $('nuRol') : correo).focus();
+}
+function revisarElegida(sinAyuda) {
+  const correo = $('nuCorreo');
   const yaTiene = cuentasExistentes.find(c => c.correo && c.correo.toLowerCase() === correo.value.trim().toLowerCase());
   if (yaTiene) $('nuAyuda').textContent = '⚠ ' + yaTiene.nombre + ' ya tiene una cuenta con ese correo.';
+  else if (!sinAyuda && !$('nuNombre').value.trim()) cargarSugerencias();
 }
-$('nuNombre').addEventListener('input', revisarElegida);
-$('nuNombre').addEventListener('change', revisarElegida);
+$('nuLista').addEventListener('mousedown', e => { const b = e.target.closest('[data-sug]'); if (b) { e.preventDefault(); elegirPersona(posibles[Number(b.dataset.sug)]); } });
+$('nuNombre').addEventListener('input', mostrarLista);
+$('nuNombre').addEventListener('focus', mostrarLista);
+$('nuNombre').addEventListener('blur', () => setTimeout(ocultarLista, 150));
+$('nuNombre').addEventListener('keydown', e => {
+  const botones = [...$('nuLista').querySelectorAll('[data-sug]')];
+  if (e.key === 'Escape') return ocultarLista();
+  if (!botones.length || $('nuLista').hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    activa = (activa + (e.key === 'ArrowDown' ? 1 : -1) + botones.length) % botones.length;
+    botones.forEach((x, i) => x.classList.toggle('activa', i === activa));
+    botones[activa].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter' && activa >= 0) { e.preventDefault(); elegirPersona(posibles[activa]); }
+});
 $('nuCorreo').addEventListener('input', () => { $('nuCorreo').dataset.auto = '0'; revisarElegida(); });
-$('nuTodas').addEventListener('change', cargarSugerencias);
+$('nuTodas').addEventListener('change', () => { cargarSugerencias(); mostrarLista(); });
 
 const NOMBRE_ROL = { admin: 'Administradora', secretaria: 'Secretaria', directiva: 'Directiva (solo consulta)' };
 async function cargarUsuarias() {

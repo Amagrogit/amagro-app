@@ -126,6 +126,12 @@
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura #crearEnlace,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
+  .sug-caja { position:absolute; left:0; right:0; top:100%; z-index:30; background:#fff; border:1px solid var(--borde); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.15); max-height:280px; overflow:auto; margin-top:2px; }
+  .sug-caja button { display:block; width:100%; text-align:left; background:none; color:var(--texto); border:0; border-radius:0; padding:7px 10px; font:inherit; font-size:13px; cursor:pointer; }
+  .sug-caja button small { color:var(--suave); }
+  .sug-caja button.activa, .sug-caja button:hover { background:#e8f3e6; }
+  .sug-caja .sin { padding:8px 10px; font-size:13px; color:var(--suave); }
+  .sug-caja[hidden] { display:none; }
   .tabla-usuarias { width:100%; border-collapse:collapse; font-size:13px; }
   .tabla-usuarias th { text-align:left; font-size:12px; color:var(--suave); padding:4px 6px; }
   .tabla-usuarias td { padding:5px 6px; border-top:1px solid var(--borde); vertical-align:middle; }
@@ -225,8 +231,8 @@
     <div id="usuariasLista">Cargando…</div>
     <details style="margin-top:8px"><summary><b>Crear una cuenta nueva</b></summary>
       <form id="formNuevaUsuaria" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px" autocomplete="off">
-        <label style="flex:1 1 180px">Nombre<br><input id="nuNombre" required maxlength="120" style="width:100%" list="nuSugerencias" autocomplete="off" placeholder="Empieza a escribir y elige de la lista"></label>
-        <datalist id="nuSugerencias"></datalist>
+        <label style="flex:1 1 180px;position:relative">Nombre<br><input id="nuNombre" required maxlength="120" style="width:100%" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="nuLista" placeholder="Escribe una parte del nombre y elige de la lista">
+          <div id="nuLista" class="sug-caja" role="listbox" hidden></div></label>
         <label style="flex:1 1 200px">Correo<br><input id="nuCorreo" type="email" required maxlength="254" style="width:100%"></label>
         <label>Categoría<br><select id="nuRol"><option value="secretaria">Secretaria</option><option value="directiva">Directiva (solo consulta)</option><option value="admin">Administradora</option></select></label>
         <button id="nuCrear" type="submit">Crear cuenta</button>
@@ -375,10 +381,10 @@
   </div>
 </div>
 
-<script src="config.js"></script>
-<script src="app.js"></script>
-<script src="mensaje.js"></script>
-<script src="sugerencias.js"></script>
-<script src="ui.js"></script>
+<script src="config.js?v=1393f592"></script>
+<script src="app.js?v=1c951283"></script>
+<script src="mensaje.js?v=56e4ef94"></script>
+<script src="sugerencias.js?v=d087c477"></script>
+<script src="ui.js?v=d61edfff"></script>
 </body>
 </html>

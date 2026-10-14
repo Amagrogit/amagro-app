@@ -36,7 +36,18 @@
     return coinciden.length === 1 ? coinciden[0] : null;
   }
 
-  const api = { personas, buscar, nombrePropio, clave };
+  // Las personas cuyo nombre contiene TODAS las partes escritas, en cualquier orden y sin importar tildes ni mayúsculas.
+  // "uquil caro" encuentra a "Carolina Uquillas Herrera". Primero las que empiezan igual. Con menos de 2 letras no propone nada.
+  function filtrar(lista, texto, max = 8) {
+    const partes = clave(texto).split(' ').filter(Boolean);
+    if (partes.join('').length < 2) return [];
+    return lista
+      .filter(p => { const k = clave(p.nombre); return partes.every(t => k.includes(t)); })
+      .sort((a, b) => (clave(b.nombre).startsWith(partes[0]) - clave(a.nombre).startsWith(partes[0])) || a.nombre.localeCompare(b.nombre, 'es'))
+      .slice(0, max);
+  }
+
+  const api = { personas, buscar, filtrar, nombrePropio, clave };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Sugerencias = api;
 })(typeof window !== 'undefined' ? window : globalThis);
