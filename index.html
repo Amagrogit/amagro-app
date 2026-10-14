@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co; frame-src blob:; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMAGRO · Postulaciones</title>
+<style>
+  :root { --verde:#3f8f3a; --azul:#1a73b8; --fondo:#f6f8f5; --borde:#dfe5dc; --texto:#1f2a1f; --suave:#5b675b; --alerta:#b3261e; --alerta-bg:#fdecea; --ok-bg:#e8f5e6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.4 system-ui,sans-serif; background:var(--fondo); color:var(--texto); }
+  header { background:#fff; border-bottom:3px solid var(--verde); padding:14px 24px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; }
+  header .acciones { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  /* Ventana emergente del mensaje para la postulante */
+  .modal { position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(20,30,20,.45); }
+  .modal[hidden] { display:none; }
+  .modal-caja { background:#fff; border-radius:12px; width:min(660px,100%); max-height:94vh; overflow:auto; padding:14px 18px 16px; box-shadow:0 12px 40px rgba(0,0,0,.3); border-top:4px solid var(--verde); }
+  .modal-cab { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
+  .modal-cab h2 { margin:0; font-size:17px; color:var(--azul); }
+  .modal .cerrar { background:none; color:var(--suave); font-size:22px; line-height:1; padding:2px 8px; border:1px solid var(--borde); }
+  .modal textarea { width:100%; min-height:min(340px,48vh); margin-top:8px; padding:8px 10px; border:1px solid var(--borde); border-radius:8px; font:inherit; resize:vertical; }
+  .modal-pie { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+  .modal-ancha { width:min(1120px,100%); }
+  .carta-grid { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:16px; align-items:start; }
+  .carta-vista iframe { width:100%; height:min(72vh,680px); border:1px solid var(--borde); border-radius:8px; background:#e9ece8; display:block; }
+  .carta-correo h3 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--verde); }
+  .carta-correo textarea { width:100%; min-height:min(300px,38vh); margin-top:8px; padding:8px 10px; border:1px solid var(--borde); border-radius:8px; font:inherit; resize:vertical; }
+  @media (max-width:860px) { .carta-grid { grid-template-columns:1fr; } .carta-vista iframe { height:52vh; } }
+  td.fecha { white-space:nowrap; }
+  /* Textos libres (empresa, región, comuna, nombre): una sola línea con largo máximo, completos al pasar el mouse */
+  .corto { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .corto-reg { max-width:170px; }
+  .enlace.corto-b { display:inline-block; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+  /* Texto suelto en vez de fecha: se recorta al ancho de una fecha; completo al pasar el mouse */
+  .fecha-texto { display:block; max-width:80px; overflow:hidden; text-overflow:ellipsis; font-size:12px; color:var(--suave); cursor:help; }
+  .orden { background:none; color:inherit; border:0; padding:0; font:inherit; font-weight:700; cursor:pointer; }
+  .orden:hover { color:var(--azul); }
+  .orden span { font-size:10px; color:var(--azul); }
+  .menu-wrap { position:relative; }
+  .engranaje { font-size:20px; line-height:1; padding:6px 11px; }
+  .menu { position:absolute; right:0; top:calc(100% + 6px); z-index:20; min-width:260px; background:#fff; border:1px solid var(--borde); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.15); padding:6px; }
+  .menu .item { display:block; width:100%; text-align:left; background:none; color:var(--texto); border:0; border-radius:6px; padding:8px 10px; }
+  .menu .item:hover, .menu .item:focus-visible { background:#eef3ec; outline:none; }
+  .menu .item small { display:block; }
+  h1 { font-size:20px; margin:0; color:var(--azul); }
+  h1 small { color:var(--verde); font-weight:500; }
+  main { padding:20px 24px; }
+  .fuente { font-size:13px; color:var(--suave); margin-bottom:12px; }
+  .fuente b { color:var(--alerta); }
+  .resumen { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+  .tarjeta { background:#fff; border:1px solid var(--borde); border-radius:10px; padding:10px 16px; min-width:140px; }
+  .tarjeta .n { font-size:26px; font-weight:700; }
+  .tarjeta.mal .n { color:var(--alerta); }
+  .tarjeta.bien .n { color:var(--verde); }
+  .controles { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; align-items:center; }
+  input[type=search], select { padding:8px 10px; border:1px solid var(--borde); border-radius:8px; font:inherit; background:#fff; }
+  input[type=search] { min-width:240px; }
+  button, label.boton { background:var(--azul); color:#fff; border:0; border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button.sec, label.boton { background:#fff; color:var(--azul); border:1px solid var(--azul); }
+  button:disabled { opacity:.6; cursor:wait; }
+  .tabla { overflow:auto; border:1px solid var(--borde); border-radius:10px; background:#fff; }
+  table { border-collapse:collapse; width:100%; min-width:900px; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid var(--borde); vertical-align:middle; }
+  th { background:#eef3ec; position:sticky; top:0; font-size:13px; }
+  tbody tr.sel td { background:#f1f7ff; }
+  .enlace { background:none; border:0; padding:0; color:var(--azul); font-weight:700; text-align:left; text-decoration:underline; text-decoration-color:transparent; }
+  .enlace:hover { text-decoration-color:currentColor; }
+  small, .sub { color:var(--suave); font-size:12px; }
+  .chip { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; margin:1px 2px 1px 0; background:#eee; color:#444; white-space:nowrap; }
+  .chip.mal { background:var(--alerta-bg); color:var(--alerta); }
+  .chip.ok { background:var(--ok-bg); color:var(--verde); }
+  .e-Pendiente-de-carta { background:#fff4d6; color:#7a5800; }
+  .e-Con-documentos { background:#dcecfb; color:#0f5a96; }
+  .e-Aprobada { background:#d9f0d6; color:#2a6a26; }
+  .e-Socia { background:#bfe5ba; color:#1d5a19; font-weight:600; }
+  .e-Renuncia { background:#e6e6e6; color:#555; }
+  .e-No-califica { background:var(--alerta-bg); color:var(--alerta); }
+  .e-Sin-gestión { background:#f1f1f1; color:#888; }
+  .vacio { padding:30px; text-align:center; color:var(--suave); }
+  .aviso { background:#fff8e1; border:1px solid #f0d98a; border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:13px; }
+  /* Ficha lateral */
+  #ficha { position:fixed; top:0; right:0; bottom:0; width:min(460px,100%); background:#fff; border-left:1px solid var(--borde); box-shadow:-6px 0 20px rgba(0,0,0,.12); overflow:auto; transform:translateX(105%); transition:transform .2s; z-index:10; }
+  #ficha.abierta { transform:none; }
+  #ficha .cab { position:sticky; top:0; background:#fff; border-bottom:3px solid var(--verde); padding:14px 18px; display:flex; gap:10px; justify-content:space-between; align-items:flex-start; }
+  #ficha h2 { margin:0 0 4px; font-size:18px; color:var(--azul); }
+  #ficha .cerrar { background:none; color:var(--suave); font-size:22px; line-height:1; padding:2px 8px; border:1px solid var(--borde); }
+  #ficha section { padding:12px 18px; border-bottom:1px solid var(--borde); }
+  #ficha h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--verde); }
+  dl { margin:0; display:grid; grid-template-columns:130px 1fr; gap:4px 10px; }
+  dt { color:var(--suave); font-size:13px; }
+  dd { margin:0; overflow-wrap:anywhere; }
+  .texto { white-space:pre-wrap; background:var(--fondo); border-radius:8px; padding:8px 10px; font-size:14px; }
+  .nada { color:#999; }
+  .ed { color:var(--azul); cursor:help; margin-left:4px; font-size:12px; }
+  /* Pasos de admisión */
+  .puntos { white-space:nowrap; }
+  .punto { display:inline-block; width:9px; height:9px; border-radius:50%; border:1.5px solid #9fb59c; margin-right:3px; vertical-align:middle; background:#fff; }
+  .punto.on { background:var(--verde); border-color:var(--verde); }
+  .paso-fila { display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; padding:5px 0; border-bottom:1px dashed var(--borde); }
+  .paso-fila:last-child { border-bottom:0; }
+  .paso-fila label { flex:1 1 190px; display:flex; gap:7px; align-items:center; cursor:pointer; }
+  .paso-fila.hecho label { color:var(--verde); font-weight:600; }
+  #ficha .paso-fila input[type=checkbox] { width:auto; }
+  #ficha .paso-fila input[type=date] { width:auto; padding:3px 6px; font-size:13px; }
+  #ficha .paso-fila .nota-paso { flex:1 1 150px; width:auto; padding:3px 6px; font-size:13px; }
+  .seguimiento { background:var(--alerta-bg); color:var(--alerta); border-radius:8px; padding:6px 9px; margin:0 0 6px; font-size:13px; }
+  .btn-peq { padding:4px 10px; font-size:13px; }
+  .cab-botones { display:flex; gap:6px; align-items:flex-start; }
+  #ficha section.editada { background:#f1f7ff; font-size:13px; }
+  #ficha input, #ficha select, #ficha textarea { width:100%; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; font:inherit; background:#fff; }
+  #ficha textarea { min-height:90px; resize:vertical; }
+  .pie { position:sticky; bottom:0; background:#fff; border-top:1px solid var(--borde); padding:10px 18px; display:flex; gap:8px; }
+  #login { position:fixed; inset:0; z-index:100; background:var(--fondo,#f4f6f3); display:flex; align-items:center; justify-content:center; padding:16px; }
+  #login[hidden], #cambioClave[hidden], #docImagen[hidden], #docMarco[hidden] { display:none !important; }
+  #cambioClave { position:fixed; inset:0; z-index:110; background:var(--fondo,#f4f6f3); display:flex; align-items:center; justify-content:center; padding:16px; }
+  #cambioClave form { background:#fff; border:1px solid var(--borde); border-top:4px solid var(--verde); border-radius:12px; padding:22px 24px; width:min(400px,100%); box-shadow:0 8px 24px rgba(0,0,0,.1); }
+  #cambioClave h2 { margin:0 0 4px; color:var(--verde); }
+  #cambioClave label { display:block; margin-top:12px; font-size:13px; font-weight:600; }
+  #cambioClave input { width:100%; padding:8px 10px; border:1px solid var(--borde); border-radius:6px; font:inherit; margin-top:4px; box-sizing:border-box; }
+  #cambioClave button { margin-top:14px; width:100%; }
+  #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
+  /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias,
+  body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura #crearEnlace,
+  body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
+  body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
+  .tabla-usuarias { width:100%; border-collapse:collapse; font-size:13px; }
+  .tabla-usuarias th { text-align:left; font-size:12px; color:var(--suave); padding:4px 6px; }
+  .tabla-usuarias td { padding:5px 6px; border-top:1px solid var(--borde); vertical-align:middle; }
+  .clave-temporal { font:600 17px/1.2 ui-monospace,Consolas,monospace; background:#fff; border:1px dashed var(--verde); border-radius:6px; padding:6px 10px; display:inline-block; user-select:all; }
+  #login form { background:#fff; border:1px solid var(--borde); border-top:4px solid var(--verde); border-radius:12px; padding:22px 24px; width:min(380px,100%); box-shadow:0 8px 24px rgba(0,0,0,.1); }
+  #login h2 { margin:0 0 4px; color:var(--verde); }
+  #login label { display:block; margin-top:12px; font-size:13px; font-weight:600; }
+  #login input { width:100%; padding:8px 10px; border:1px solid var(--borde); border-radius:6px; font:inherit; margin-top:4px; box-sizing:border-box; }
+  #login button { margin-top:16px; width:100%; }
+  #loginError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
+  #usuario { font-size:13px; color:var(--suave); }
+  .aviso-docs { background:#e8f1fb; border-color:#9ec3ea; }
+  .chip.nuevo { background:#dbeafe; color:#0b57a4; }
+  .hist-fila { font-size:12.5px; padding:5px 0; border-top:1px solid var(--borde); }
+  .hist-fila:first-child { border-top:0; }
+  .hist-fila .quien { font-weight:600; }
+  @media (max-width:600px) { main { padding:14px 12px; } header { padding:12px; } dl { grid-template-columns:100px 1fr; } }
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <form id="formLogin" autocomplete="on">
+    <h2>AMAGRO AG</h2>
+    <div class="sub">Revisión de postulaciones · inicia sesión con tu cuenta</div>
+    <label for="loginCorreo">Correo</label>
+    <input id="loginCorreo" type="email" name="email" autocomplete="username" required>
+    <label for="loginClave">Contraseña</label>
+    <input id="loginClave" type="password" name="password" autocomplete="current-password" required>
+    <button id="loginEnviar" type="submit">Entrar</button>
+    <div id="loginError" role="alert"></div>
+  </form>
+</div>
+<div id="cambioClave" hidden>
+  <form id="formCambioClave" autocomplete="off">
+    <h2 id="cambioTitulo">Elige tu contraseña</h2>
+    <div class="sub" id="cambioTexto">Tu contraseña actual es temporal. Elige una nueva, que solo tú conozcas (mínimo 10 caracteres), para poder continuar.</div>
+    <label for="claveNueva">Contraseña nueva</label>
+    <input id="claveNueva" type="password" autocomplete="new-password" required minlength="10" maxlength="72">
+    <label for="claveNueva2">Repítela</label>
+    <input id="claveNueva2" type="password" autocomplete="new-password" required maxlength="72">
+    <button id="cambioEnviar" type="submit">Guardar contraseña</button>
+    <button id="cambioCancelar" type="button" class="sec" hidden>Cancelar</button>
+    <div id="cambioError" role="alert"></div>
+  </form>
+</div>
+<header>
+  <h1>AMAGRO AG <small>· Revisión de postulaciones</small></h1>
+  <div class="acciones">
+    <span id="usuario"></span>
+    <button id="actualizar" title="Descarga de nuevo la planilla de Google y suma las postulaciones nuevas">↻ Actualizar</button>
+    <div class="menu-wrap">
+      <button class="sec engranaje" id="btnMenu" title="Más opciones" aria-label="Más opciones" aria-haspopup="true" aria-expanded="false">⚙</button>
+      <div id="menuAjustes" class="menu" role="menu" hidden>
+        <button class="item" role="menuitem" id="configurar">Enlace de la planilla<small>Ver o cambiar el enlace de Google</small></button>
+        <button class="item" role="menuitem" id="subirCsv">Subir CSV<small>Cargar un archivo exportado de la planilla</small></button>
+        <button class="item" role="menuitem" id="exportar">Descargar datos limpios<small>CSV con las correcciones incluidas</small></button>
+        <button class="item" role="menuitem" id="importarSocias" hidden>Importar planilla de socias<small>Actualizar el listado con la lista de AMAGRO</small></button>
+        <button class="item" role="menuitem" id="verHistorial">Historial de cambios<small>Quién cambió qué y cuándo</small></button>
+        <button class="item" role="menuitem" id="respaldo">Respaldo de correcciones<small>Descargar o restaurar los cambios</small></button>
+        <button class="item" role="menuitem" id="verUsuarias" hidden>Usuarias y categorías<small>Crear cuentas y definir quién puede hacer qué</small></button>
+        <button class="item" role="menuitem" id="cambiarMiClave">Cambiar mi contraseña<small>Elegir una contraseña nueva</small></button>
+        <button class="item" role="menuitem" id="cerrarSesion">Cerrar sesión<small>Salir de tu cuenta en este computador</small></button>
+      </div>
+    </div>
+    <input id="archivo" type="file" accept=".csv" hidden>
+  </div>
+</header>
+<main>
+  <div id="avisoDocs" class="aviso aviso-docs" role="status" hidden>
+    <b id="avisoDocsTexto"></b>
+    <button class="btn-peq" id="verPorRevisar" style="margin-left:8px">Ver quiénes</button>
+  </div>
+  <div id="avisoCorrecciones" class="aviso aviso-docs" role="status" hidden>
+    <b id="avisoCorreccionesTexto"></b>
+    <button class="btn-peq" id="verCorrecciones" style="margin-left:8px">Revisar</button>
+  </div>
+  <div id="panelCorrecciones" class="aviso" hidden>
+    <b>Correcciones enviadas por las postulantes</b>
+    <div class="sub">Lo que escribieron no se aplica solo: elige qué aceptar. Si aceptas, la ficha se actualiza y la alerta se recalcula.</div>
+    <div id="correccionesLista" style="margin-top:6px;max-height:55vh;overflow:auto">Cargando…</div>
+  </div>
+  <div id="avisoRespaldo" class="aviso" role="alert" hidden>
+    <b>Recuerda respaldar tus correcciones.</b> <span id="avisoRespaldoTexto"></span>
+    <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-peq" id="avisoDescargar">Descargar respaldo ahora</button>
+      <button class="sec btn-peq" id="avisoPosponer">Recordar más tarde</button>
+    </div>
+  </div>
+  <div id="avisoMigracion" class="aviso" role="alert" hidden>
+    <b>Hay correcciones guardadas solo en este computador.</b> <span id="migracionTexto"></span>
+    <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
+  </div>
+  <div id="panelUsuarias" class="aviso" hidden>
+    <b>Usuarias y categorías</b>
+    <div class="sub" style="margin:2px 0 6px"><b>Administradora:</b> todo, incluido crear cuentas. <b>Secretaria:</b> trabaja las postulaciones, pero no cambia la configuración ni las cuentas. <b>Directiva:</b> solo consulta (no ve los carnets).</div>
+    <div id="claveTemporalCaja" class="aviso" style="background:#e8f5e6;border-color:#9fd29b" hidden></div>
+    <div id="usuariasLista">Cargando…</div>
+    <details style="margin-top:8px"><summary><b>Crear una cuenta nueva</b></summary>
+      <form id="formNuevaUsuaria" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px" autocomplete="off">
+        <label style="flex:1 1 180px">Nombre<br><input id="nuNombre" required maxlength="120" style="width:100%"></label>
+        <label style="flex:1 1 200px">Correo<br><input id="nuCorreo" type="email" required maxlength="254" style="width:100%"></label>
+        <label>Categoría<br><select id="nuRol"><option value="secretaria">Secretaria</option><option value="directiva">Directiva (solo consulta)</option><option value="admin">Administradora</option></select></label>
+        <button id="nuCrear" type="submit">Crear cuenta</button>
+      </form>
+      <div class="sub" style="margin-top:4px">Se genera una contraseña temporal que verás una sola vez. La persona deberá cambiarla al ingresar.</div>
+    </details>
+  </div>
+  <div id="panelSocias" class="aviso" hidden>
+    <b>Importar planilla de socias</b><br>
+    <small>Pega el enlace de la planilla (compartida con "cualquier persona con el enlace") o elige el archivo CSV. Primero se muestra qué cambiaría; no se guarda nada hasta que pulses Aplicar. No se usan los pagos.</small>
+    <div style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="search" id="sociasUrl" placeholder="https://docs.google.com/spreadsheets/d/…" style="flex:1 1 320px">
+      <label class="boton" id="sociasArchivoLabel">o elegir archivo CSV</label>
+      <input id="sociasArchivo" type="file" accept=".csv,text/csv" hidden>
+      <button id="sociasVista">Ver vista previa</button>
+    </div>
+    <div id="sociasResultado"></div>
+  </div>
+  <div id="panelHistorial" class="aviso" hidden>
+    <b>Historial de cambios</b> <small>(los últimos 200)</small>
+    <div id="historialLista" style="margin-top:6px;max-height:50vh;overflow:auto">Cargando…</div>
+  </div>
+  <div id="panelConfig" class="aviso" hidden>
+    <b>Enlace de la planilla de Google</b> (debe estar compartida como "Cualquier persona con el enlace: lector")<br>
+    <input type="search" id="hojaUrl" placeholder="https://docs.google.com/spreadsheets/d/…" style="width:70%;margin:6px 6px 0 0">
+    <button id="guardarUrl">Guardar</button>
+  </div>
+  <div id="panelRespaldo" class="aviso" hidden>
+    <b>Respaldo de correcciones</b><br>
+    <span id="respaldoInfo">Cargando…</span><br>
+    <small>Las correcciones y los pasos se guardan en la base de datos compartida (Supabase) y cada cambio queda en el historial.
+    Aun así, descarga un respaldo de vez en cuando y guárdalo en un lugar seguro. Restaurar un archivo reemplaza todo y solo lo puede hacer la administradora.</small><br>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button id="bajarRespaldo">Descargar respaldo</button>
+      <label class="boton" id="subirRespaldoLabel" hidden>Restaurar desde un archivo</label>
+      <input id="archivoRespaldo" type="file" accept=".json,application/json" hidden>
+    </div>
+  </div>
+  <div id="mensaje" class="aviso" hidden></div>
+  <div class="fuente" id="fuente"></div>
+  <div id="avisos"></div>
+  <div class="resumen" id="resumen"></div>
+  <div class="controles">
+    <input type="search" id="buscar" placeholder="Buscar por nombre, RUT, empresa, comuna…">
+    <select id="etapa"><option value="">Todas las etapas</option></select>
+    <select id="periodo" title="Filtrar por fecha de postulación">
+      <option value="">Cualquier fecha</option>
+      <option value="7">Últimos 7 días</option>
+      <option value="30">Últimos 30 días</option>
+      <option value="90">Últimos 90 días</option>
+      <option value="365">Último año</option>
+    </select>
+    <select id="filtro">
+      <option value="todas">Con y sin alertas</option>
+      <option value="alertas">Solo con alertas</option>
+      <option value="limpias">Solo sin alertas</option>
+      <option value="duplicadas">Solo personas con más de una postulación</option>
+      <option value="sinrespuesta">Carta enviada sin respuesta (seguimiento)</option>
+      <option value="porrevisar">Documentos recibidos por revisar</option>
+    </select>
+    <select id="region"><option value="">Todas las regiones</option></select>
+  </div>
+  <div class="tabla"><table>
+    <thead id="encabezadoTabla"><tr>
+      <th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th>
+      <th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th>
+      <th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>
+    </tr></thead>
+    <tbody id="filas"></tbody>
+  </table></div>
+</main>
+
+<aside id="ficha" aria-label="Ficha de la postulante" aria-hidden="true"></aside>
+
+<div id="modalCarta" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="cartaTitulo">
+  <div class="modal-caja modal-ancha">
+    <div class="modal-cab">
+      <h2 id="cartaTitulo">Carta de solicitud de ingreso</h2>
+      <button class="cerrar" id="cerrarCarta" aria-label="Cerrar">×</button>
+    </div>
+    <div id="cartaAvisos"></div>
+    <div class="carta-grid">
+      <div class="carta-vista">
+        <iframe id="vistaCarta" title="Vista previa de la carta en PDF"></iframe>
+        <p class="sub" style="margin:6px 0 0">
+          <label><input type="checkbox" id="cartaFecha"> Incluir la fecha de hoy (si no, queda en blanco para la fecha de la firma)</label>
+          · <a id="cartaNuevaPestana" href="#" target="_blank" rel="noopener">Abrir en una pestaña nueva</a>
+        </p>
+      </div>
+      <div class="carta-correo">
+        <h3>Correo para la postulante</h3>
+        <p id="cartaSinCorreo" class="sub" style="color:var(--alerta);margin:0 0 6px" hidden>Esta persona no tiene un correo válido: contáctala por teléfono.</p>
+        <div class="sub">Para: <b id="cartaPara"></b></div>
+        <div class="sub">Asunto: <b id="cartaAsunto"></b></div>
+        <label class="sub" id="cartaEnlaceFila" style="display:block;margin:4px 0" hidden><input type="checkbox" id="cartaConEnlace" checked> Enviar solo el enlace (ahí la persona descarga su carta ya completada y sube la firmada y el carnet). Se crea al abrir el correo o copiar el mensaje.</label>
+        <textarea id="cartaCuerpo" aria-label="Texto del correo"></textarea>
+        <div class="modal-pie">
+          <button class="btn-peq" id="abrirGmail" hidden title="Abre Gmail en otra pestaña con el mensaje listo (la carta se descarga desde el enlace). Tú revisas y pulsas Enviar">✉ Abrir en Gmail</button>
+          <button class="btn-peq" id="abrirThunderbird" hidden title="Abre Thunderbird con el mensaje listo y la carta ya adjunta. Tú revisas y pulsas Enviar">✉ Abrir en Thunderbird con la carta adjunta</button>
+          <button class="btn-peq" id="abrirCartaCorreo" title="Abre tu programa de correo con el mensaje y descarga la carta para adjuntarla">✉ Abrir en mi correo y descargar la carta</button>
+          <button class="sec btn-peq" id="descargarCartaPdf">⬇ Descargar PDF</button>
+          <button class="sec btn-peq" id="copiarCartaMensaje">Copiar mensaje</button>
+          <button class="sec btn-peq" id="copiarCartaAsunto">Copiar asunto</button>
+        </div>
+        <div id="cartaEstado" class="sub" role="status" style="font-weight:600;margin-top:6px;min-height:1.2em"></div>
+        <div id="cartaRegistro" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--borde)">
+          <span id="cartaYaEnviada" class="sub" style="color:var(--verde);font-weight:600" hidden></span>
+          <button class="sec btn-peq" id="deshacerCartaEnviada" hidden title="Quita la marca de &quot;Carta enviada&quot; de los pasos de la ficha">Deshacer</button>
+          <span id="cartaRegistroAyuda" class="sub">Al abrir el correo desde aquí, la carta queda anotada sola como enviada en los pasos de la ficha. Si al final no la envías, pulsa Deshacer.</span>
+        </div>
+        <p class="sub" style="margin:4px 0 0">La app no envía correos: se abre tu programa de correo con el mensaje listo y la carta se descarga para que la adjuntes antes de enviar.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalDoc" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="docTitulo">
+  <div class="modal-caja modal-ancha">
+    <div class="modal-cab"><h2 id="docTitulo">Documento recibido</h2><button class="cerrar" id="cerrarDoc" aria-label="Cerrar">×</button></div>
+    <iframe id="docMarco" title="Documento recibido" hidden style="width:100%;height:min(75vh,720px);border:1px solid var(--borde);border-radius:8px;background:#e9ece8"></iframe>
+    <img id="docImagen" alt="Documento recibido" hidden style="max-width:100%;max-height:75vh;display:block;margin:0 auto;border-radius:8px">
+    <p class="sub" style="margin:8px 0 0">Solo se muestra aquí, en tu pantalla: no se guarda en este computador.</p>
+  </div>
+</div>
+<div id="modalMensaje" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
+  <div class="modal-caja">
+    <div class="modal-cab">
+      <h2 id="modalTitulo">Mensaje para la postulante</h2>
+      <button class="cerrar" id="cerrarModal" aria-label="Cerrar">×</button>
+    </div>
+    <p id="modalAviso" class="sub" style="color:var(--alerta);margin:0 0 6px" hidden>Esta persona no tiene un correo válido: contáctala por teléfono con este texto.</p>
+    <div class="sub">Para: <b id="msgPara"></b></div>
+    <div class="sub">Asunto: <b id="msgAsunto"></b></div>
+    <label class="sub" id="msgEnlaceFila" style="display:block;margin:4px 0" hidden><input type="checkbox" id="msgConEnlace" checked> Incluir un enlace para que la persona corrija sus datos ahí (se crea al abrir el correo o copiar el mensaje; lo que envíe queda como propuesta para que tú la aceptes)</label>
+    <textarea id="msgCuerpo" aria-label="Texto del mensaje"></textarea>
+    <div class="modal-pie">
+      <button class="btn-peq" id="abrirGmailMsg" hidden title="Abre Gmail en otra pestaña con el mensaje listo. Tú revisas y pulsas Enviar">✉ Abrir en Gmail</button>
+      <button class="btn-peq" id="copiarMensaje">Copiar mensaje</button>
+      <button class="sec btn-peq" id="copiarAsunto">Copiar asunto</button>
+      <button class="sec btn-peq" id="abrirCorreo">Abrir en mi correo</button>
+      <span id="modalEstado" class="sub" role="status" style="font-weight:600"></span>
+    </div>
+    <p class="sub" style="margin:8px 0 0">La app no envía correos: lo envía quien lo prepara. Puedes editar el texto antes de copiarlo.</p>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script src="mensaje.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
