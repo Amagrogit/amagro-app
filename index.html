@@ -225,11 +225,14 @@
     <div id="usuariasLista">Cargando…</div>
     <details style="margin-top:8px"><summary><b>Crear una cuenta nueva</b></summary>
       <form id="formNuevaUsuaria" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px" autocomplete="off">
-        <label style="flex:1 1 180px">Nombre<br><input id="nuNombre" required maxlength="120" style="width:100%"></label>
+        <label style="flex:1 1 180px">Nombre<br><input id="nuNombre" required maxlength="120" style="width:100%" list="nuSugerencias" autocomplete="off" placeholder="Empieza a escribir y elige de la lista"></label>
+        <datalist id="nuSugerencias"></datalist>
         <label style="flex:1 1 200px">Correo<br><input id="nuCorreo" type="email" required maxlength="254" style="width:100%"></label>
         <label>Categoría<br><select id="nuRol"><option value="secretaria">Secretaria</option><option value="directiva">Directiva (solo consulta)</option><option value="admin">Administradora</option></select></label>
         <button id="nuCrear" type="submit">Crear cuenta</button>
       </form>
+      <div id="nuAyuda" class="sub" style="margin-top:4px" role="status"></div>
+      <label class="sub" style="display:block;margin-top:4px"><input type="checkbox" id="nuTodas"> Proponer también a personas que aún no son socias (todas las postulantes)</label>
       <div class="sub" style="margin-top:4px">Se genera una contraseña temporal que verás una sola vez. La persona deberá cambiarla al ingresar.</div>
     </details>
   </div>
@@ -375,6 +378,7 @@
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script src="mensaje.js"></script>
+<script src="sugerencias.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

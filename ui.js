@@ -1213,12 +1213,37 @@ $('formCambioClave').addEventListener('submit', async e => {
 });
 
 // ---- Usuarias y categorías (solo la administradora) ----
+// Sugerencias al escribir el nombre: salen de la lista de socias ya cargada. Al elegir una se rellena el correo de la planilla
+// (se puede cambiar), y se avisa si esa persona ya tiene cuenta.
+let cuentasExistentes = [], sugeridas = [];
+function cargarSugerencias() {
+  sugeridas = Sugerencias.personas(datos, { todas: $('nuTodas').checked });
+  $('nuSugerencias').innerHTML = sugeridas.map(p => '<option value="' + esc(p.nombre) + '" label="' + esc(p.correo) + '"></option>').join('');
+  $('nuAyuda').textContent = sugeridas.length ? sugeridas.length + ' personas disponibles para elegir.' : 'No hay personas cargadas para sugerir: escribe el nombre y el correo a mano.';
+}
+function revisarElegida() {
+  const p = Sugerencias.buscar(sugeridas, $('nuNombre').value);
+  const correo = $('nuCorreo');
+  if (p) {
+    $('nuNombre').value = p.nombre;
+    if (!correo.value || correo.dataset.auto === '1') { correo.value = p.correo; correo.dataset.auto = '1'; }
+    $('nuAyuda').textContent = 'Elegida de la lista (fila ' + p.fila + '). Revisa el correo: es el que dejó en el formulario, y puede ser otro el que quieras usar.';
+  }
+  const yaTiene = cuentasExistentes.find(c => c.correo && c.correo.toLowerCase() === correo.value.trim().toLowerCase());
+  if (yaTiene) $('nuAyuda').textContent = '⚠ ' + yaTiene.nombre + ' ya tiene una cuenta con ese correo.';
+}
+$('nuNombre').addEventListener('input', revisarElegida);
+$('nuNombre').addEventListener('change', revisarElegida);
+$('nuCorreo').addEventListener('input', () => { $('nuCorreo').dataset.auto = '0'; revisarElegida(); });
+$('nuTodas').addEventListener('change', cargarSugerencias);
+
 const NOMBRE_ROL = { admin: 'Administradora', secretaria: 'Secretaria', directiva: 'Directiva (solo consulta)' };
 async function cargarUsuarias() {
   const caja = $('usuariasLista');
   const r = await fetch('/api/usuarios');
   const j = await r.json().catch(() => ({ error: 'No se pudo leer la lista.' }));
   if (!r.ok) { caja.textContent = j.error || 'No se pudo leer la lista.'; return; }
+  cuentasExistentes = j.usuarios;
   caja.innerHTML = '<table class="tabla-usuarias"><thead><tr><th>Nombre</th><th>Correo</th><th>Categoría</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>' +
     j.usuarios.map(u => '<tr data-usuaria="' + esc(u.id) + '"><td>' + esc(u.nombre) + (u.cambiarClave ? ' <span class="chip" title="Aún no cambia su contraseña temporal">clave temporal</span>' : '') + '</td><td>' + esc(u.correo) + '</td>' +
       '<td><select data-usuaria-rol>' + Object.entries(NOMBRE_ROL).map(([k, v]) => '<option value="' + k + '"' + (k === u.rol ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></td>' +
@@ -1233,7 +1258,7 @@ function mostrarClaveTemporal(nombre, correo, clave) {
   caja.hidden = false;
   $('copiarClaveTemporal').addEventListener('click', async () => mostrar((await copiarTexto(clave)) ? 'Contraseña copiada.' : 'No se pudo copiar: selecciónala y presiona Ctrl+C.', false));
 }
-$('verUsuarias').addEventListener('click', () => { cerrarMenu(); $('claveTemporalCaja').hidden = true; if (alternarPanel('panelUsuarias')) cargarUsuarias(); });
+$('verUsuarias').addEventListener('click', () => { cerrarMenu(); $('claveTemporalCaja').hidden = true; if (alternarPanel('panelUsuarias')) { cargarUsuarias(); cargarSugerencias(); } });
 $('formNuevaUsuaria').addEventListener('submit', async e => {
   e.preventDefault();
   $('nuCrear').disabled = true;
@@ -1242,6 +1267,8 @@ $('formNuevaUsuaria').addEventListener('submit', async e => {
   $('nuCrear').disabled = false;
   if (r.error) return mostrar(r.error, true);
   $('formNuevaUsuaria').reset();
+  $('nuCorreo').dataset.auto = '0';
+  cargarSugerencias();
   mostrarClaveTemporal(nombre, r.correo, r.clave);
   await cargarUsuarias();
 });
