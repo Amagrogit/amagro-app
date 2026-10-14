@@ -760,6 +760,15 @@ async function post(url, cuerpo) {
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
 const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
+// Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
+PANELES.forEach(id => {
+  const panel = $(id);
+  const boton = document.createElement('button');
+  boton.type = 'button'; boton.className = 'cerrar-panel'; boton.textContent = '✕ Cerrar'; boton.title = 'Cerrar (Esc)';
+  boton.addEventListener('click', cerrarPaneles);
+  panel.style.position = 'relative';
+  panel.prepend(boton);
+});
 const hayPanelAbierto = () => PANELES.some(id => !$(id).hidden);
 function alternarPanel(id) {
   const abrir = $(id).hidden;

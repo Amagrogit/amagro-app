@@ -126,6 +126,8 @@
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura #crearEnlace,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
+  .cerrar-panel { position:absolute; top:8px; right:10px; z-index:5; background:#fff; color:var(--suave); border:1px solid var(--borde); border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; }
+  .cerrar-panel:hover { color:var(--texto); border-color:var(--suave); }
   .sug-caja { position:absolute; left:0; right:0; top:100%; z-index:30; background:#fff; border:1px solid var(--borde); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.15); max-height:280px; overflow:auto; margin-top:2px; }
   .sug-caja button { display:block; width:100%; text-align:left; background:none; color:var(--texto); border:0; border-radius:0; padding:7px 10px; font:inherit; font-size:13px; cursor:pointer; }
   .sug-caja button small { color:var(--suave); }
@@ -385,6 +387,6 @@
 <script src="app.js?v=e16ab74c"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=1a024b27"></script>
+<script src="ui.js?v=bbec6312"></script>
 </body>
 </html>
