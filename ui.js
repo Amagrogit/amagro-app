@@ -758,7 +758,7 @@ async function post(url, cuerpo) {
 }
 
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
-const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias'];
+const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
 // Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
 PANELES.forEach(id => {
@@ -778,6 +778,7 @@ function alternarPanel(id) {
 }
 
 $('configurar').addEventListener('click', () => alternarPanel('panelConfig'));
+$('verAyuda').addEventListener('click', () => { if (alternarPanel('panelAyuda')) $('panelAyuda').scrollTop = 0; });
 
 $('guardarUrl').addEventListener('click', async () => {
   const r = await post('/api/config', { hojaUrl: $('hojaUrl').value });

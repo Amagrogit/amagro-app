@@ -151,6 +151,30 @@
   .hist-fila:first-child { border-top:0; }
   .hist-fila .quien { font-weight:600; }
   @media (max-width:600px) { main { padding:14px 12px; } header { padding:12px; } dl { grid-template-columns:100px 1fr; } }
+  /* Ayuda: la guía de primeros pasos dentro de la aplicación */
+  #panelAyuda { max-height:75vh; overflow:auto; background:#fff; }
+  #panelAyuda .ayuda-guia { max-width:860px; margin:0 auto; font-size:14px; line-height:1.45; color:var(--texto,#1f2a1f); }
+  #panelAyuda .ayuda-titulo { font-size:20px; margin:4px 0 0; color:#1a73b8; }
+  #panelAyuda h2 { font-size:14px; margin:12px 0 5px; color:var(--verde); text-transform:uppercase; letter-spacing:.04em; }
+  #panelAyuda p { margin:0 0 6px; }
+  #panelAyuda .entrar { border:1px solid var(--borde); border-left:4px solid var(--verde); background:#f6faf5; border-radius:6px; padding:7px 10px; margin-bottom:4px; }
+  #panelAyuda .entrar .url { font:600 14px ui-monospace, Consolas, monospace; color:var(--azul); }
+  #panelAyuda ol, #panelAyuda ul { margin:0 0 6px; padding-left:19px; }
+  #panelAyuda li { margin:0 0 3px; }
+  #panelAyuda .tarea { border:1px solid var(--borde); border-radius:6px; padding:6px 10px 3px; margin:0 0 6px; break-inside:avoid; }
+  #panelAyuda .tarea h3 { margin:0 0 3px; font-size:15px; color:var(--azul); }
+  #panelAyuda .tarea .cuando { color:var(--suave); font-size:12.5px; margin:0 0 3px; }
+  #panelAyuda kbd, #panelAyuda .btn { display:inline-block; border:1px solid var(--borde); background:#f1f4ef; border-radius:4px; padding:0 5px; font-size:13px; white-space:nowrap; }
+  #panelAyuda .btn { background:#e8f1fb; border-color:#bcd5ee; color:#0f5a96; }
+  #panelAyuda table { border-collapse:collapse; width:100%; margin-bottom:6px; }
+  #panelAyuda th, #panelAyuda td { border:1px solid var(--borde); padding:3px 7px; text-align:left; font-size:13px; vertical-align:top; }
+  #panelAyuda th { background:#eef3ec; }
+  #panelAyuda td.si { text-align:center; color:#2a6a26; font-weight:700; } #panelAyuda td.no { text-align:center; color:var(--suave); }
+  #panelAyuda .reglas { border:1px solid #f0c4be; background:#fff6f4; border-radius:6px; padding:6px 10px 3px; }
+  #panelAyuda .reglas h2 { margin-top:0; color:var(--alerta); }
+  #panelAyuda .nota { font-size:12.5px; color:var(--suave); }
+  #panelAyuda h2 { font-size:14px; }
+  #panelAyuda .ayuda-guia { font-size:15px; }
 </style>
 </head>
 <body>
@@ -184,6 +208,7 @@
   <div class="acciones">
     <span id="usuario"></span>
     <button id="actualizar" title="Descarga de nuevo la planilla de Google y suma las postulaciones nuevas">↻ Actualizar</button>
+    <button class="sec" id="verAyuda" title="Guía de primeros pasos">? Ayuda</button>
     <div class="menu-wrap">
       <button class="sec engranaje" id="btnMenu" title="Más opciones" aria-label="Más opciones" aria-haspopup="true" aria-expanded="false">⚙</button>
       <div id="menuAjustes" class="menu" role="menu" hidden>
@@ -225,6 +250,118 @@
   <div id="avisoMigracion" class="aviso" role="alert" hidden>
     <b>Hay correcciones guardadas solo en este computador.</b> <span id="migracionTexto"></span>
     <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
+  </div>
+  <div id="panelAyuda" class="aviso" hidden>
+    <div class="ayuda-guia">
+      <h3 class="ayuda-titulo">AMAGRO AG · Guía de primeros pasos</h3><p class="nota">Para administradoras y secretarias</p>
+      
+      <h2>1. Cómo entrar</h2>
+      <div class="entrar">
+        <p style="margin:0">Abre en cualquier computador o celular: <span class="url">https://amagrogit.github.io/amagro-app/</span></p>
+        <p style="margin:3px 0 0"><b>Usuario:</b> tu correo (el mismo al que llegó la invitación) · <b>Contraseña:</b> la temporal que te entregaron.</p>
+      </div>
+      <ol>
+        <li>La primera vez, la aplicación te pide <b>elegir una contraseña propia</b> (mínimo 10 caracteres). Solo tú la conocerás: guárdala en un gestor de contraseñas.</li>
+        <li>Al terminar, en un computador compartido, cierra sesión: <kbd>⚙</kbd> → <b>Cerrar sesión</b>. En tu propio computador puedes dejarla abierta.</li>
+        <li>Si olvidas tu contraseña, otra administradora te genera una temporal con <b>Restablecer contraseña</b> (por eso conviene que haya al menos dos).</li>
+      </ol>
+      
+      <h2>2. Qué verás</h2>
+      <ul>
+        <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
+        <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas.</li>
+        <li><b>El menú <kbd>⚙</kbd></b> (arriba a la derecha) reúne las herramientas. Cada panel que se abre tiene su botón <b>✕ Cerrar</b>.</li>
+      </ul>
+      
+      <h2>3. Tareas del día a día</h2>
+      
+      <div class="tarea">
+        <h3>A. Actualizar la planilla</h3>
+        <p class="cuando">Cuando lleguen postulaciones nuevas al formulario de la página.</p>
+        <ol><li>Pulsa <span class="btn">↻ Actualizar</span> (arriba). Baja la planilla de Google y la guarda para todas.</li></ol>
+      </div>
+      
+      <div class="tarea">
+        <h3>B. Enviar la carta de solicitud a una postulante</h3>
+        <ol>
+          <li>Abre su ficha → sección <b>Carta y documentos</b> → <span class="btn">📄 Ver carta y preparar correo</span>.</li>
+          <li>Revisa la carta (se ve a la izquierda) y el correo (a la derecha). Si hay datos con alerta, la propia pantalla lo avisa.</li>
+          <li>Pulsa <span class="btn">✉ Abrir en Gmail</span>. Se abre Gmail con el mensaje listo y un enlace para que ella descargue su carta y suba la firmada y su carnet.</li>
+          <li>Revisa que el remitente sea la cuenta de AMAGRO, cambia la firma por tu nombre y pulsa <b>Enviar</b> en Gmail. La aplicación anota sola el paso «Carta enviada».</li>
+        </ol>
+      </div>
+      
+      <div class="tarea">
+        <h3>C. Datos con alerta (RUT, fecha, teléfono, región)</h3>
+        <ol>
+          <li>En la ficha, pulsa <span class="btn">✉ Preparar mensaje para la postulante</span> y luego <b>Abrir en Gmail</b>.</li>
+          <li>Ella corrige sus datos en una página y lo que envía queda como <b>propuesta</b>: no cambia nada hasta que tú lo aceptes.</li>
+          <li>Cuando llegue, aparece el aviso azul «enviaron una corrección»: <span class="btn">Revisar</span> → mira «hoy → propuesto» → <span class="btn">Aceptar lo marcado</span> o <span class="btn">Descartar</span>.</li>
+        </ol>
+      </div>
+      
+      <div class="tarea">
+        <h3>D. Revisar los documentos que llegan</h3>
+        <ol>
+          <li>En el aviso azul «enviaron documentos», pulsa <span class="btn">Ver quiénes</span>.</li>
+          <li>En su ficha, en <b>Carta y documentos</b>, abre la <b>carta firmada</b> y la <b>copia del carnet</b> con <span class="btn">Ver</span>. Comprueba que coincidan con sus datos.</li>
+          <li>Si todo está bien, pulsa <span class="btn">Identidad verificada: borrar carnet</span>. <b>El carnet se borra para siempre</b> y queda marcado el paso «Identidad verificada».</li>
+          <li>Marca el paso <b>«Revisada por secretaría»</b>. Con eso sale de la lista «por revisar».</li>
+        </ol>
+      </div>
+      
+      
+      
+      
+      
+      <h3 class="ayuda-titulo">Solo para administradoras</h3><p class="nota">Menú ⚙ · algunas opciones solo las ven ellas</p>
+      
+      <h2>4. Cuentas de usuarias</h2>
+      <p>⚙ → <b>Usuarias y categorías</b>. Aquí se decide quién entra y qué puede hacer.</p>
+      <table>
+        <tr><th></th><th>Administradora</th><th>Secretaria</th><th>Directiva</th></tr>
+        <tr><th>Ver listado, fichas, historial y cartas firmadas</th><td class="si">Sí</td><td class="si">Sí</td><td class="si">Sí</td></tr>
+        <tr><th>Ver carnets</th><td class="si">Sí</td><td class="si">Sí</td><td class="no">No</td></tr>
+        <tr><th>Corregir datos, marcar pasos, enviar correos y enlaces, aceptar correcciones</th><td class="si">Sí</td><td class="si">Sí</td><td class="no">No</td></tr>
+        <tr><th>Importar planillas, restaurar respaldos, configurar</th><td class="si">Sí</td><td class="no">No</td><td class="no">No</td></tr>
+        <tr><th>Crear y desactivar cuentas, restablecer contraseñas</th><td class="si">Sí</td><td class="no">No</td><td class="no">No</td></tr>
+      </table>
+      <p><b>Crear una cuenta:</b></p>
+      <ol>
+        <li>Abre <b>Crear una cuenta nueva</b>. En <b>Nombre</b> escribe una parte del nombre y elige a la persona de la lista (se rellena su correo; puedes cambiarlo). Elige su <b>categoría</b> y pulsa <span class="btn">Crear cuenta</span>.</li>
+        <li>Aparece una <b>contraseña temporal</b>, <b>una sola vez</b>. Cópiala y entrégasela <b>en persona o por llamada</b> (no en un chat grupal ni en el mismo correo).</li>
+        <li>Pulsa <span class="btn">✉ Preparar correo de invitación</span>: abre Gmail con la dirección de la aplicación y las instrucciones, sin la contraseña.</li>
+        <li>La persona entra y elige su contraseña. Cuando lo haga, desaparece la marca «clave temporal» junto a su nombre.</li>
+      </ol>
+      <p><b>Cambiar categoría</b> (lista desplegable), <b>Desactivar</b> (deja de poder entrar al instante; se puede volver a activar) y <b>Restablecer contraseña</b> están en la misma pantalla. Siempre debe quedar <b>al menos una administradora activa</b>.</p>
+      
+      <h2>5. Otras herramientas de administradora</h2>
+      <ul>
+        <li><b>Importar planilla de socias</b> (⚙): actualiza el listado con la lista oficial de AMAGRO. Primero muestra una <b>vista previa</b>; no guarda nada hasta que pulses <b>Aplicar cambios</b>, y cada ficha se puede deshacer.</li>
+        <li><b>Respaldo de correcciones</b> (⚙): descarga un archivo con todas las correcciones y pasos. Conviene hacerlo cada cierto tiempo y guardarlo fuera del computador. Restaurar un respaldo reemplaza todo: úsalo solo si hay un problema grave.</li>
+        <li><b>Enlace de la planilla</b> (⚙): la dirección de la planilla de Google de donde se descargan las postulaciones.</li>
+        <li><b>Historial de cambios</b> (⚙): quién cambió qué y cuándo, en toda la aplicación o en una ficha.</li>
+      </ul>
+      
+      <div class="reglas">
+        <h2>Reglas de oro</h2>
+        <ul>
+          <li><b>El carnet se borra apenas se verifica la identidad.</b> Es una promesa de AMAGRO a las postulantes: no lo guardes ni lo reenvíes.</li>
+          <li><b>Nunca compartas tu contraseña</b> ni uses la cuenta de otra persona: el historial registra quién hizo cada cosa.</li>
+          <li><b>Nunca pidas claves ni pagos por correo o mensaje</b>; las socias desconfían de las estafas, y con razón.</li>
+          <li><b>Revisa siempre el correo antes de enviarlo</b> (destinatario, remitente, firma). La aplicación nunca envía nada sola.</li>
+          <li>No menciones a otras personas, duplicados ni postulaciones anteriores en los mensajes a una postulante.</li>
+        </ul>
+      </div>
+      
+      <h2>6. Si algo no funciona</h2>
+      <ul>
+        <li><b>Veo una pantalla vieja o rara:</b> recarga con <kbd>Ctrl</kbd> + <kbd>F5</kbd>.</li>
+        <li><b>«Tu sesión venció»:</b> vuelve a ingresar con tu contraseña.</li>
+        <li><b>No me deja hacer algo:</b> puede que tu categoría no lo permita (ver la tabla de arriba).</li>
+        <li><b>Un mensaje de error que no entiendo:</b> toma una captura de pantalla y envíala a quien da soporte: <b>Jorge Fonck</b>, consultor de AMAGRO: <b>jfonckechevarria@gmail.com</b>.</li>
+      </ul>
+    </div>
   </div>
   <div id="panelUsuarias" class="aviso" hidden>
     <b>Usuarias y categorías</b>
@@ -390,6 +527,6 @@
 <script src="app.js?v=eef4f320"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=4e883039"></script>
+<script src="ui.js?v=9cc1e3ab"></script>
 </body>
 </html>
