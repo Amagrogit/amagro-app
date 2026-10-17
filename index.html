@@ -122,7 +122,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura #crearEnlace,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -151,6 +151,7 @@
   .hist-fila:first-child { border-top:0; }
   .hist-fila .quien { font-weight:600; }
   @media (max-width:600px) { main { padding:14px 12px; } header { padding:12px; } dl { grid-template-columns:100px 1fr; } }
+  #duplicadosLista .grupo-dup { border:1px solid var(--borde); border-radius:6px; padding:6px 10px; margin-bottom:6px; background:#fff; }
   /* Ayuda: la guía de primeros pasos dentro de la aplicación */
   #panelAyuda { max-height:75vh; overflow:auto; background:#fff; }
   #panelAyuda .ayuda-guia { max-width:860px; margin:0 auto; font-size:14px; line-height:1.45; color:var(--texto,#1f2a1f); }
@@ -216,6 +217,7 @@
         <button class="item" role="menuitem" id="subirCsv">Subir CSV<small>Cargar un archivo exportado de la planilla</small></button>
         <button class="item" role="menuitem" id="exportar">Descargar datos limpios<small>CSV con las correcciones incluidas</small></button>
         <button class="item" role="menuitem" id="importarSocias" hidden>Importar planilla de socias<small>Actualizar el listado con la lista de AMAGRO</small></button>
+        <button class="item" role="menuitem" id="verDuplicados">Duplicados de socias<small>Dejar la postulación más reciente y marcar las otras</small></button>
         <button class="item" role="menuitem" id="verHistorial">Historial de cambios<small>Quién cambió qué y cuándo</small></button>
         <button class="item" role="menuitem" id="respaldo">Respaldo de correcciones<small>Descargar o restaurar los cambios</small></button>
         <button class="item" role="menuitem" id="verUsuarias" hidden>Usuarias y categorías<small>Crear cuentas y definir quién puede hacer qué</small></button>
@@ -250,6 +252,12 @@
   <div id="avisoMigracion" class="aviso" role="alert" hidden>
     <b>Hay correcciones guardadas solo en este computador.</b> <span id="migracionTexto"></span>
     <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
+  </div>
+  <div id="panelDuplicados" class="aviso" hidden>
+    <b>Duplicados de socias</b>
+    <div class="sub" style="margin:2px 0 6px">Personas que ya son socias y tienen más de una postulación. Queda como principal la <b>más reciente</b>; las otras se marcan como duplicadas (dejan de contar y de dar alertas). <b>No se borra nada</b>: cada marca se puede quitar desde la ficha y queda en el historial.</div>
+    <div id="duplicadosLista">Cargando…</div>
+    <div style="margin-top:8px"><button id="aplicarDuplicados" hidden>Aplicar</button></div>
   </div>
   <div id="panelAyuda" class="aviso" hidden>
     <div class="ayuda-guia">
@@ -338,7 +346,8 @@
       <h2>5. Otras herramientas de administradora</h2>
       <ul>
         <li><b>Importar planilla de socias</b> (⚙): actualiza el listado con la lista oficial de AMAGRO. Primero muestra una <b>vista previa</b>; no guarda nada hasta que pulses <b>Aplicar cambios</b>, y cada ficha se puede deshacer.</li>
-        <li><b>Respaldo de correcciones</b> (⚙): descarga un archivo con todas las correcciones y pasos. Conviene hacerlo cada cierto tiempo y guardarlo fuera del computador. Restaurar un respaldo reemplaza todo: úsalo solo si hay un problema grave.</li>
+        <li><b>Duplicados de socias</b> (⚙): deja como principal la postulación más reciente de cada socia repetida y marca las otras como duplicadas (no se borra nada; en su ficha: <b>Quitar la marca</b>).</li>
+  <li><b>Respaldo de correcciones</b> (⚙): descarga un archivo con todas las correcciones y pasos. Conviene hacerlo cada cierto tiempo y guardarlo fuera del computador. Restaurar un respaldo reemplaza todo: úsalo solo si hay un problema grave.</li>
         <li><b>Enlace de la planilla</b> (⚙): la dirección de la planilla de Google de donde se descargan las postulaciones.</li>
         <li><b>Historial de cambios</b> (⚙): quién cambió qué y cuándo, en toda la aplicación o en una ficha.</li>
       </ul>
@@ -436,6 +445,7 @@
       <option value="duplicadas">Solo personas con más de una postulación</option>
       <option value="sinrespuesta">Carta enviada sin respuesta (seguimiento)</option>
       <option value="porrevisar">Documentos recibidos por revisar</option>
+      <option value="marcadas">Marcadas como duplicadas</option>
     </select>
     <select id="region"><option value="">Todas las regiones</option></select>
   </div>
@@ -524,9 +534,9 @@
 </div>
 
 <script src="config.js?v=5778f432"></script>
-<script src="app.js?v=eef4f320"></script>
+<script src="app.js?v=1a679d37"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=9cc1e3ab"></script>
+<script src="ui.js?v=947ab677"></script>
 </body>
 </html>

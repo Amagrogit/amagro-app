@@ -419,7 +419,7 @@ function mapearColumnas(encabezados) {
 // solo tiene texto libre en "Gestión".
 const EDITABLES = ['nombre', 'rut', 'correo', 'nacimiento', 'telefono', 'region', 'comuna', 'direccion',
   'profesion', 'situacion', 'empresa', 'origen', 'resultado', 'modalidad', 'ingreso', 'citacion',
-  'asistencia', 'observaciones', 'etapa', 'inscripcion'];
+  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada'];
 
 // La clave identifica una postulación aunque cambie su posición en la planilla:
 // fecha y hora del envío + correo original (o RUT + nombre si la fila se agregó a mano).
@@ -436,7 +436,8 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
   const editados = [], originales = {};
   const original = campo => (campo === 'observaciones' ? observacionesOriginales : crudo(campo));
   for (const campo of EDITABLES) {
-    if (campo === 'etapa' || !(campo in ed)) continue;
+    // 'duplicada' (clave de la postulación principal) no es una corrección de datos: se muestra aparte.
+    if (campo === 'etapa' || campo === 'duplicada' || !(campo in ed)) continue;
     if (String(ed[campo]).trim() !== String(original(campo)).trim()) {
       editados.push(campo); originales[campo] = original(campo);
     }
@@ -497,6 +498,8 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
     motivacion: N.normalizarTexto(v('motivacion')),
     observaciones: [v('observaciones'), v('observaciones2')].map(N.normalizarTexto).filter(Boolean).join(' · '),
     clave: claveDe(fila, mapa),
+    // Si alguien la marcó como duplicada de otra postulación, aquí va la clave de la principal (si no, vacío).
+    duplicadaDe: typeof ed.duplicada === 'string' && ed.duplicada.trim() && ed.duplicada.trim() !== claveDe(fila, mapa) ? ed.duplicada.trim() : '',
     editados,
     originales,
     pasos,
@@ -533,8 +536,10 @@ function procesarCSV(texto, hoy = new Date(), ediciones = {}, pasosPorClave = {}
   const padre = registros.map((_, i) => i);
   const raiz = i => (padre[i] === i ? i : (padre[i] = raiz(padre[i])));
   const vistos = { rut: new Map(), correo: new Map() };
+  // Las filas marcadas como duplicadas ya fueron resueltas: no cuentan para detectar duplicados ni dan alertas.
+  const resuelta = r => r._encabezado || !!r.duplicadaDe;
   registros.forEach((r, i) => {
-    if (r._encabezado) return;
+    if (resuelta(r)) return;
     for (const clave of ['rut', 'correo']) {
       if (!r[clave]) continue;
       if (clave === 'rut' && r.alertas.includes('RUT inválido')) continue;
@@ -549,7 +554,7 @@ function procesarCSV(texto, hoy = new Date(), ediciones = {}, pasosPorClave = {}
 
   const grupos = new Map();
   registros.forEach((r, i) => {
-    if (r._encabezado) return;
+    if (resuelta(r)) return;
     const k = raiz(i);
     (grupos.get(k) || grupos.set(k, []).get(k)).push(r);
   });
@@ -574,6 +579,13 @@ function procesarCSV(texto, hoy = new Date(), ediciones = {}, pasosPorClave = {}
     }
   }
   registros.forEach(r => { r.relacionadas = r.relacionadas || []; });
+  // A cada duplicada se le indica cuál es su principal (si todavía existe en la planilla).
+  const porClave = new Map(registros.filter(r => !r._encabezado).map(r => [r.clave, r]));
+  for (const r of registros) {
+    if (!r.duplicadaDe) continue;
+    const p = porClave.get(r.duplicadaDe);
+    r.duplicadaDeInfo = p ? { fila: p.fila, nombre: p.nombre, etapa: p.etapa, marca: p.marca } : null;
+  }
 
   return {
     columnasNoEncontradas: Object.keys(CAMPOS).filter(c => mapa[c] === undefined),
@@ -840,6 +852,76 @@ module.exports = { camposConAlerta, evaluarPropuesta, valorActual, PIDE };
 
 });
 
+definir("lib/duplicados", function (module, exports, require, __dirname, Buffer) {
+// Duplicados de socias: personas con más de una postulación que ya figuran como socias.
+// Regla acordada con la administración: se deja como principal la postulación más reciente y las demás se marcan
+// como duplicadas (campo 'duplicada' = clave de la principal). No se borra nada: se puede deshacer, y queda en el historial.
+const N = require('./normalizar');
+
+const CAMPOS_COMPARADOS = ['nombre', 'correo', 'telefono', 'region', 'comuna', 'direccion', 'profesion', 'empresa'];
+const norm = v => N.sinTildes(String(v || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Grupos de postulaciones de una misma persona (según RUT o correo, ya calculados en `relacionadas`).
+function gruposDePersonas(registros) {
+  const activos = registros.filter(r => !r.duplicadaDe);
+  const porFila = new Map(activos.map(r => [r.fila, r]));
+  const visto = new Set();
+  const grupos = [];
+  for (const r of activos) {
+    if (visto.has(r.fila) || !r.relacionadas.length) continue;
+    const g = [], pendientes = [r];
+    while (pendientes.length) {
+      const x = pendientes.pop();
+      if (visto.has(x.fila) || !porFila.has(x.fila)) continue;
+      visto.add(x.fila); g.push(x);
+      for (const o of x.relacionadas) if (porFila.has(o.fila)) pendientes.push(porFila.get(o.fila));
+    }
+    if (g.length > 1) grupos.push(g);
+  }
+  return grupos;
+}
+
+// La más reciente por fecha de postulación; si empatan o no hay fecha, la que está más abajo en la planilla.
+const masReciente = g => g.slice().sort((a, b) => (String(b.postulacion || '').localeCompare(String(a.postulacion || '')) || b.fila - a.fila))[0];
+
+// Propuestas para los grupos donde alguna postulación ya es de una socia.
+function proponer(registros) {
+  const grupos = gruposDePersonas(registros);
+  const deSocias = grupos.filter(g => g.some(r => r.etapa === 'Socia'));
+  return {
+    grupos: deSocias.map(g => {
+      const principal = masReciente(g);
+      return {
+        principal: principal.clave,
+        filas: g.slice().sort((a, b) => a.fila - b.fila).map(r => ({
+          fila: r.fila, clave: r.clave, nombre: r.nombre, correo: r.correo, marca: r.marca, postulacion: r.postulacion,
+          etapa: r.etapa, principal: r === principal,
+        })),
+        difieren: CAMPOS_COMPARADOS.filter(k => new Set(g.map(r => norm(r[k]))).size > 1),
+      };
+    }).sort((a, b) => a.filas[0].fila - b.filas[0].fila),
+    otros: grupos.length - deSocias.length,
+  };
+}
+
+// De lo que pidió la pantalla (claves de las principales) a lo que hay que guardar: { claveDuplicada: { duplicada: clavePrincipal } }.
+// Solo se acepta lo que coincide con una propuesta actual: la pantalla no puede marcar cualquier cosa.
+function planDeAplicacion(registros, principales) {
+  const { grupos } = proponer(registros);
+  const porPrincipal = new Map(grupos.map(g => [g.principal, g]));
+  const porClave = {};
+  for (const p of principales) {
+    const g = porPrincipal.get(p);
+    if (!g) return { error: 'Uno de los grupos ya cambió o no corresponde. Actualiza la lista e inténtalo de nuevo.' };
+    for (const f of g.filas) if (!f.principal) porClave[f.clave] = { duplicada: p };
+  }
+  return { porClave };
+}
+
+module.exports = { proponer, planDeAplicacion, gruposDePersonas };
+
+});
+
 definir("lib/almacen", function (module, exports, require, __dirname, Buffer) {
 const { ErrorSupabase } = require('./supabase');
 
@@ -923,6 +1005,11 @@ class Almacen {
 
   editarCampos(clave, limpios) {
     return this.modificar(clave, campos => Object.assign(campos, limpios));
+  }
+
+  // Quita una sola corrección (por ejemplo, la marca de duplicada) sin tocar las demás.
+  quitarCampo(clave, campo) {
+    return this.modificar(clave, campos => { delete campos[campo]; });
   }
 
   // Quita las correcciones de datos; los pasos de admisión se conservan.
@@ -1289,6 +1376,7 @@ const { PASOS, PLAZO_RESPUESTA_DIAS, validarPaso } = require('./pasos');
 const { ErrorSupabase } = require('./supabase');
 const { leerSocias, planificar, camposAAplicar } = require('./socias');
 const { camposConAlerta, evaluarPropuesta, valorActual } = require('./correcciones');
+const { proponer, planDeAplicacion } = require('./duplicados');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1554,6 +1642,29 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       }
       const r = await almacen.editarVarios(porClave);
       return ok({ aplicadas: r.ok, fallidas: r.fallidas.length, aceptadas: aceptadas.length, ...(await datosActuales()) });
+    }
+
+    // ---------- Duplicados de socias ----------
+    // Propuesta: para cada persona que ya es socia y tiene más de una postulación, queda como principal la más reciente.
+    // Aplicar solo marca las otras como duplicadas (no borra nada) y se puede deshacer una por una.
+    if (ruta === 'GET /api/duplicados') return ok(proponer((await datosActuales()).registros));
+    if (ruta === 'POST /api/duplicados/aplicar') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const principales = Array.isArray((a.cuerpo || {}).principales) ? a.cuerpo.principales.filter(x => typeof x === 'string') : [];
+      if (!principales.length) return fallo(400, 'No hay grupos para aplicar.');
+      const plan = planDeAplicacion((await datosActuales()).registros, principales);
+      if (plan.error) return fallo(409, plan.error);
+      for (const campos of Object.values(plan.porClave)) { const v = validarCampos(campos); if (v.error) return fallo(400, v.error); }
+      const r = await almacen.editarVarios(plan.porClave);
+      return ok({ marcadas: r.ok, fallidas: r.fallidas.length, ...(await datosActuales()) });
+    }
+    if (ruta === 'POST /api/duplicados/deshacer') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const registro = await buscarRegistro((a.cuerpo || {}).clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (!registro.duplicadaDe) return fallo(400, 'Esa postulación no está marcada como duplicada.');
+      await almacen.quitarCampo(registro.clave, 'duplicada');
+      return ok(await datosActuales());
     }
 
     // ---------- Corrección de datos por enlace ----------

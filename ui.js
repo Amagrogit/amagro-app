@@ -33,7 +33,7 @@ function cargar(resp, conservar) {
   const regs = [...new Set(datos.map(d => d.region).filter(Boolean))].sort();
   $('region').innerHTML = '<option value="">Todas las regiones</option>' + regs.map(r => `<option>${esc(r)}</option>`).join('');
   const cuenta = {};
-  datos.forEach(d => { cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
+  datos.forEach(d => { if (!d.duplicadaDe) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
   $('etapa').innerHTML = '<option value="">Todas las etapas</option>' +
     ETAPAS.filter(e => cuenta[e]).map(e => `<option value="${esc(e)}">${esc(e)} (${cuenta[e]})</option>`).join('');
   // Al guardar una edición se conservan los filtros y la ficha abierta
@@ -51,9 +51,11 @@ function pintar() {
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
+  // Las postulaciones marcadas como duplicadas ya están resueltas: solo se ven con el filtro «Marcadas como duplicadas».
   const vis = datos.filter(d =>
     (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo].join(' ').toLowerCase().includes(q)) &&
-    (f === 'todas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'marcadas' ? !!d.duplicadaDe : !d.duplicadaDe) &&
+    (f === 'todas' || f === 'marcadas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
   // Orden: las filas sin dato quedan siempre al final, sea cual sea la dirección.
@@ -69,11 +71,12 @@ function pintar() {
   document.querySelectorAll('#encabezadoTabla .orden').forEach(b => {
     b.querySelector('span').textContent = b.dataset.orden === orden.campo && orden.dir ? (orden.dir === 1 ? '▲' : '▼') : '';
   });
-  const con = datos.filter(d => d.alertas.length).length;
+  const activas = datos.filter(d => !d.duplicadaDe);
+  const con = activas.filter(d => d.alertas.length).length;
   $('resumen').innerHTML =
-    `<div class="tarjeta"><div class="n">${datos.length}</div>postulaciones</div>` +
+    `<div class="tarjeta"><div class="n">${activas.length}</div>postulaciones</div>` +
     `<div class="tarjeta"><div class="n">${vis.length}</div>en esta lista</div>` +
-    `<div class="tarjeta bien"><div class="n">${datos.length - con}</div>sin alertas</div>` +
+    `<div class="tarjeta bien"><div class="n">${activas.length - con}</div>sin alertas</div>` +
     `<div class="tarjeta mal"><div class="n">${con}</div>con alertas</div>`;
   $('filas').innerHTML = vis.length ? vis.map(d => `
     <tr class="${d.fila === seleccion ? 'sel' : ''}">
@@ -215,6 +218,8 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
     </div>
     ${d.editados.length && !editando ? `<section class="editada">Esta ficha tiene ${d.editados.length} campo(s) corregido(s) en la app (marcados con ✎). La planilla de Google no se modifica.
       <button class="sec btn-peq" id="restaurarEd">Deshacer correcciones</button></section>` : ''}
+    ${d.duplicadaDe && !editando ? `<section class="editada">Marcada como <b>duplicada</b> de ${d.duplicadaDeInfo ? `la postulación de la fila <button class="enlace" data-ir="${d.duplicadaDeInfo.fila}">${d.duplicadaDeInfo.fila}</button> (${esc(d.duplicadaDeInfo.nombre)})` : 'otra postulación que ya no está en la planilla'}. No cuenta en el listado ni da alertas de duplicado.
+      <button class="sec btn-peq" id="quitarDuplicada">Quitar la marca</button></section>` : ''}
     ${editando ? '' : bloquePasos(d)}
     ${d.relacionadas.length ? `<section><h3>Otras postulaciones de la misma persona</h3>
       ${d.relacionadas.map(o => `<div style="margin-bottom:6px"><button class="enlace" data-ir="${o.fila}">Fila ${o.fila}</button>
@@ -551,6 +556,52 @@ async function deshacerEdiciones() {
   mostrar('Se restauraron los datos de la planilla.');
 }
 
+async function quitarMarcaDuplicada() {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d || !confirm('¿Quitar la marca de duplicada? Esta postulación volverá al listado y a contar para las alertas de duplicado.')) return;
+  const r = await post('/api/duplicados/deshacer', { clave: d.clave });
+  if (r.error) return mostrar(r.error, true);
+  cargar(r, true);
+  mostrar('Se quitó la marca de duplicada.');
+}
+
+// ---- Duplicados de socias ----
+// Muestra la propuesta (la más reciente queda como principal) y la aplica solo si la persona confirma.
+let propuestaDuplicados = [];
+async function cargarDuplicados() {
+  const caja = $('duplicadosLista');
+  caja.textContent = 'Cargando…';
+  const r = await fetch('/api/duplicados');
+  const j = await r.json().catch(() => ({ error: 'No se pudo leer la propuesta.' }));
+  if (!r.ok) { caja.textContent = j.error || 'No se pudo leer la propuesta.'; return; }
+  propuestaDuplicados = j.grupos;
+  $('aplicarDuplicados').hidden = !j.grupos.length;
+  $('aplicarDuplicados').textContent = 'Aplicar a ' + (j.grupos.length === 1 ? 'este grupo' : 'los ' + j.grupos.length + ' grupos');
+  const nombreCampo = { nombre: 'nombre', correo: 'correo', telefono: 'teléfono', region: 'región', comuna: 'comuna', direccion: 'dirección', profesion: 'profesión', empresa: 'empresa' };
+  caja.innerHTML = (j.grupos.length ? j.grupos.map((g, i) =>
+    '<div class="grupo-dup"><b>Persona ' + (i + 1) + '</b>' + (g.difieren.length ? ' <span class="sub">· difiere: ' + esc(g.difieren.map(k => nombreCampo[k] || k).join(', ')) + '</span>' : '') +
+    g.filas.map(f => '<div class="hist-fila"><button class="enlace" data-ir-dup="' + f.fila + '">Fila ' + f.fila + '</button> · ' + esc(f.marca || 'sin fecha') + ' · ' + esc(f.nombre) + ' · <span class="chip ' + claseEtapa(f.etapa) + '">' + esc(f.etapa) + '</span> ' +
+      (f.principal ? '<b style="color:var(--verde)">→ queda como principal</b>' : '<span class="sub">→ se marca duplicada</span>') + '</div>').join('') + '</div>').join('')
+    : 'No hay duplicados de socias por resolver.') +
+    (j.otros ? '<p class="sub">Hay además ' + j.otros + ' persona(s) con más de una postulación que aún no son socias: esas se revisan aparte.</p>' : '');
+}
+$('verDuplicados').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelDuplicados')) cargarDuplicados(); });
+$('duplicadosLista').addEventListener('click', e => {
+  const b = e.target.closest('[data-ir-dup]');
+  if (b && puedeSalir()) { cerrarPaneles(); abrirFicha(Number(b.dataset.irDup)); }
+});
+$('aplicarDuplicados').addEventListener('click', async () => {
+  const n = propuestaDuplicados.length;
+  if (!n || !confirm('¿Marcar como duplicadas las otras postulaciones de ' + n + (n === 1 ? ' persona' : ' personas') + '? No se borra nada y se puede quitar la marca una por una.')) return;
+  $('aplicarDuplicados').disabled = true;
+  const r = await post('/api/duplicados/aplicar', { principales: propuestaDuplicados.map(g => g.principal) });
+  $('aplicarDuplicados').disabled = false;
+  if (r.error) return mostrar(r.error, true);
+  cargar(r, true);
+  mostrar(r.marcadas + ' postulación(es) marcadas como duplicadas' + (r.fallidas ? ' (' + r.fallidas + ' no se pudieron guardar: reintenta)' : '') + '.');
+  cargarDuplicados();
+});
+
 $('filas').addEventListener('click', e => {
   const b = e.target.closest('[data-fila]');
   if (b && puedeSalir()) abrirFicha(Number(b.dataset.fila));
@@ -562,6 +613,7 @@ $('ficha').addEventListener('click', e => {
   if (on('cancelarEd')) { if (puedeSalir()) abrirFicha(seleccion); return; }
   if (on('guardarEd')) return guardarEdicion();
   if (on('restaurarEd')) return deshacerEdiciones();
+  if (on('quitarDuplicada')) return quitarMarcaDuplicada();
   if (on('prepararMensaje')) return abrirModalMensaje();
   if (on('verCarta')) return abrirModalCarta();
   if (on('crearEnlace')) return crearEnlaceSubida();
@@ -758,7 +810,7 @@ async function post(url, cuerpo) {
 }
 
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
-const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda'];
+const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
 // Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
 PANELES.forEach(id => {
@@ -1384,6 +1436,7 @@ function lineaHistorial(h, conNombre) {
   const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
   const etiquetaPaso = id => (pasosDef.find(p => p.id === id) || {}).etiqueta || id;
   const cambios = Object.entries(h.detalle || {}).map(([k, v]) => {
+    if (k === 'duplicada') return v.despues ? 'la marcó como duplicada de otra postulación' : 'quitó la marca de duplicada';
     if (h.accion === 'paso') return v.despues ? 'marcó «' + etiquetaPaso(k) + '» (' + textoValor(v.despues) + ')' : 'desmarcó «' + etiquetaPaso(k) + '»';
     return k + ': ' + textoValor(v.antes) + ' → ' + textoValor(v.despues);
   }).join('; ');
