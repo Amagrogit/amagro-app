@@ -853,13 +853,44 @@ module.exports = { camposConAlerta, evaluarPropuesta, valorActual, PIDE };
 });
 
 definir("lib/duplicados", function (module, exports, require, __dirname, Buffer) {
-// Duplicados de socias: personas con más de una postulación que ya figuran como socias.
-// Regla acordada con la administración: se deja como principal la postulación más reciente y las demás se marcan
-// como duplicadas (campo 'duplicada' = clave de la principal). No se borra nada: se puede deshacer, y queda en el historial.
+// Duplicados: personas con más de una postulación. Regla acordada con la administración: se deja como principal la
+// postulación más reciente y las demás se marcan como duplicadas (campo 'duplicada' = clave de la principal).
+// No se borra nada: se puede deshacer, y queda en el historial.
+//
+// Se propone solo lo seguro:
+//  - 'socia':     alguna de las postulaciones ya es de una socia.
+//  - 'mismo-rut': todas comparten un RUT válido y los nombres son equivalentes (mismas palabras salvo acentos,
+//                 mayúsculas, un error de ortografía o un nombre omitido), sin «Renuncia» ni «No califica» de por medio.
+// El resto queda "para revisar a mano".
 const N = require('./normalizar');
 
 const CAMPOS_COMPARADOS = ['nombre', 'correo', 'telefono', 'region', 'comuna', 'direccion', 'profesion', 'empresa'];
 const norm = v => N.sinTildes(String(v || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Distancia de edición entre dos palabras (para tolerar una letra mal escrita).
+function distancia(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+const palabras = s => norm(s).replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+
+// ¿Es el mismo nombre? Cada palabra del más corto debe aparecer en el más largo (con a lo más una letra distinta en palabras
+// de 5 letras o más). Así «Tabita Díaz Lobos» y «Tabita Magdalena Díaz Lobos» son equivalentes, pero «Ana Pérez» y «Ana Soto» no.
+function nombresEquivalentes(a, b) {
+  let A = palabras(a), B = palabras(b);
+  if (!A.length || !B.length) return false;
+  if (A.length > B.length) [A, B] = [B, A];
+  if (A.length < 2) return false; // un nombre de una sola palabra no basta para dar por segura la identidad
+  const libres = [...B];
+  return A.every(p => {
+    const i = libres.findIndex(q => q === p || (p.length >= 5 && q.length >= 5 && distancia(p, q) <= 1));
+    if (i < 0) return false;
+    libres.splice(i, 1);
+    return true;
+  });
+}
 
 // Grupos de postulaciones de una misma persona (según RUT o correo, ya calculados en `relacionadas`).
 function gruposDePersonas(registros) {
@@ -881,27 +912,38 @@ function gruposDePersonas(registros) {
   return grupos;
 }
 
+const tienePasos = r => !!r.pasos && Object.keys(r.pasos).length > 0;
 // La más reciente por fecha de postulación; si empatan o no hay fecha, la que está más abajo en la planilla.
 const masReciente = g => g.slice().sort((a, b) => (String(b.postulacion || '').localeCompare(String(a.postulacion || '')) || b.fila - a.fila))[0];
 
-// Propuestas para los grupos donde alguna postulación ya es de una socia.
+// Por qué un grupo no se propone (o null si es seguro como 'mismo-rut').
+function motivoRevision(g) {
+  const rut = g[0].rut;
+  if (!rut || g.some(r => r.rut !== rut || r.alertas.includes('RUT inválido'))) return 'No comparten el mismo RUT válido';
+  if (g.some(r => r.etapa === 'Renuncia' || r.etapa === 'No califica')) return 'Alguna postulación figura como «Renuncia» o «No califica»: decide una persona';
+  for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) if (!nombresEquivalentes(g[i].nombre, g[j].nombre)) return 'Los nombres no parecen ser de la misma persona';
+  if (g.filter(tienePasos).length > 1) return 'Más de una postulación tiene pasos de admisión marcados';
+  return null;
+}
+
+const describir = (g, principal) => g.slice().sort((a, b) => a.fila - b.fila).map(r => ({
+  fila: r.fila, clave: r.clave, nombre: r.nombre, correo: r.correo, marca: r.marca, postulacion: r.postulacion, etapa: r.etapa, principal: r === principal,
+}));
+const diferencias = g => CAMPOS_COMPARADOS.filter(k => new Set(g.map(r => norm(r[k]))).size > 1);
+
+// { grupos: [{ tipo, principal, filas, difieren }], revisar: [{ filas, motivo }] }
 function proponer(registros) {
-  const grupos = gruposDePersonas(registros);
-  const deSocias = grupos.filter(g => g.some(r => r.etapa === 'Socia'));
-  return {
-    grupos: deSocias.map(g => {
-      const principal = masReciente(g);
-      return {
-        principal: principal.clave,
-        filas: g.slice().sort((a, b) => a.fila - b.fila).map(r => ({
-          fila: r.fila, clave: r.clave, nombre: r.nombre, correo: r.correo, marca: r.marca, postulacion: r.postulacion,
-          etapa: r.etapa, principal: r === principal,
-        })),
-        difieren: CAMPOS_COMPARADOS.filter(k => new Set(g.map(r => norm(r[k]))).size > 1),
-      };
-    }).sort((a, b) => a.filas[0].fila - b.filas[0].fila),
-    otros: grupos.length - deSocias.length,
-  };
+  const grupos = [], revisar = [];
+  for (const g of gruposDePersonas(registros)) {
+    const deSocia = g.some(r => r.etapa === 'Socia');
+    const motivo = deSocia ? null : motivoRevision(g);
+    if (!deSocia && motivo) { revisar.push({ filas: describir(g, null), motivo }); continue; }
+    const conPasos = g.filter(tienePasos);
+    const principal = conPasos.length === 1 ? conPasos[0] : masReciente(g); // si solo una tiene avance, esa es la principal
+    grupos.push({ tipo: deSocia ? 'socia' : 'mismo-rut', principal: principal.clave, filas: describir(g, principal), difieren: diferencias(g) });
+  }
+  const orden = x => x.filas[0].fila;
+  return { grupos: grupos.sort((a, b) => orden(a) - orden(b)), revisar: revisar.sort((a, b) => orden(a) - orden(b)) };
 }
 
 // De lo que pidió la pantalla (claves de las principales) a lo que hay que guardar: { claveDuplicada: { duplicada: clavePrincipal } }.
@@ -918,7 +960,7 @@ function planDeAplicacion(registros, principales) {
   return { porClave };
 }
 
-module.exports = { proponer, planDeAplicacion, gruposDePersonas };
+module.exports = { proponer, planDeAplicacion, gruposDePersonas, nombresEquivalentes };
 
 });
 

@@ -578,12 +578,14 @@ async function cargarDuplicados() {
   $('aplicarDuplicados').hidden = !j.grupos.length;
   $('aplicarDuplicados').textContent = 'Aplicar a ' + (j.grupos.length === 1 ? 'este grupo' : 'los ' + j.grupos.length + ' grupos');
   const nombreCampo = { nombre: 'nombre', correo: 'correo', telefono: 'teléfono', region: 'región', comuna: 'comuna', direccion: 'dirección', profesion: 'profesión', empresa: 'empresa' };
+  const fila = (f, rol) => '<div class="hist-fila"><button class="enlace" data-ir-dup="' + f.fila + '">Fila ' + f.fila + '</button> · ' + esc(f.marca || 'sin fecha') + ' · ' + esc(f.nombre) + ' · <span class="chip ' + claseEtapa(f.etapa) + '">' + esc(f.etapa) + '</span> ' + rol + '</div>';
+  const etiqueta = { socia: 'ya es socia', 'mismo-rut': 'mismo RUT y nombre equivalente' };
   caja.innerHTML = (j.grupos.length ? j.grupos.map((g, i) =>
-    '<div class="grupo-dup"><b>Persona ' + (i + 1) + '</b>' + (g.difieren.length ? ' <span class="sub">· difiere: ' + esc(g.difieren.map(k => nombreCampo[k] || k).join(', ')) + '</span>' : '') +
-    g.filas.map(f => '<div class="hist-fila"><button class="enlace" data-ir-dup="' + f.fila + '">Fila ' + f.fila + '</button> · ' + esc(f.marca || 'sin fecha') + ' · ' + esc(f.nombre) + ' · <span class="chip ' + claseEtapa(f.etapa) + '">' + esc(f.etapa) + '</span> ' +
-      (f.principal ? '<b style="color:var(--verde)">→ queda como principal</b>' : '<span class="sub">→ se marca duplicada</span>') + '</div>').join('') + '</div>').join('')
-    : 'No hay duplicados de socias por resolver.') +
-    (j.otros ? '<p class="sub">Hay además ' + j.otros + ' persona(s) con más de una postulación que aún no son socias: esas se revisan aparte.</p>' : '');
+    '<div class="grupo-dup"><b>Persona ' + (i + 1) + '</b> <span class="chip">' + esc(etiqueta[g.tipo] || g.tipo) + '</span>' + (g.difieren.length ? ' <span class="sub">· difiere: ' + esc(g.difieren.map(k => nombreCampo[k] || k).join(', ')) + '</span>' : '') +
+    g.filas.map(f => fila(f, f.principal ? '<b style="color:var(--verde)">→ queda como principal</b>' : '<span class="sub">→ se marca duplicada</span>')).join('') + '</div>').join('')
+    : 'No hay duplicados seguros por resolver.') +
+    (j.revisar.length ? '<h4 style="margin:12px 0 4px">Para decidir a mano (' + j.revisar.length + ')</h4><div class="sub">No se tocan desde aquí: hay algo que una persona debe mirar.</div>' +
+      j.revisar.map(g => '<div class="grupo-dup"><span class="sub">' + esc(g.motivo) + '</span>' + g.filas.map(f => fila(f, '')).join('') + '</div>').join('') : '');
 }
 $('verDuplicados').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelDuplicados')) cargarDuplicados(); });
 $('duplicadosLista').addEventListener('click', e => {

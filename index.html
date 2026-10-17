@@ -217,7 +217,7 @@
         <button class="item" role="menuitem" id="subirCsv">Subir CSV<small>Cargar un archivo exportado de la planilla</small></button>
         <button class="item" role="menuitem" id="exportar">Descargar datos limpios<small>CSV con las correcciones incluidas</small></button>
         <button class="item" role="menuitem" id="importarSocias" hidden>Importar planilla de socias<small>Actualizar el listado con la lista de AMAGRO</small></button>
-        <button class="item" role="menuitem" id="verDuplicados">Duplicados de socias<small>Dejar la postulación más reciente y marcar las otras</small></button>
+        <button class="item" role="menuitem" id="verDuplicados">Duplicados<small>Dejar la postulación más reciente y marcar las otras</small></button>
         <button class="item" role="menuitem" id="verHistorial">Historial de cambios<small>Quién cambió qué y cuándo</small></button>
         <button class="item" role="menuitem" id="respaldo">Respaldo de correcciones<small>Descargar o restaurar los cambios</small></button>
         <button class="item" role="menuitem" id="verUsuarias" hidden>Usuarias y categorías<small>Crear cuentas y definir quién puede hacer qué</small></button>
@@ -254,8 +254,8 @@
     <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
   </div>
   <div id="panelDuplicados" class="aviso" hidden>
-    <b>Duplicados de socias</b>
-    <div class="sub" style="margin:2px 0 6px">Personas que ya son socias y tienen más de una postulación. Queda como principal la <b>más reciente</b>; las otras se marcan como duplicadas (dejan de contar y de dar alertas). <b>No se borra nada</b>: cada marca se puede quitar desde la ficha y queda en el historial.</div>
+    <b>Duplicados</b>
+    <div class="sub" style="margin:2px 0 6px">Personas con más de una postulación que ya son socias, o que tienen el <b>mismo RUT</b> y un nombre equivalente (cambia un acento, una letra o falta un segundo nombre). Queda como principal la <b>más reciente</b>; las otras se marcan como duplicadas (dejan de contar y de dar alertas). <b>No se borra nada</b>: cada marca se puede quitar desde la ficha y queda en el historial.</div>
     <div id="duplicadosLista">Cargando…</div>
     <div style="margin-top:8px"><button id="aplicarDuplicados" hidden>Aplicar</button></div>
   </div>
@@ -346,7 +346,7 @@
       <h2>5. Otras herramientas de administradora</h2>
       <ul>
         <li><b>Importar planilla de socias</b> (⚙): actualiza el listado con la lista oficial de AMAGRO. Primero muestra una <b>vista previa</b>; no guarda nada hasta que pulses <b>Aplicar cambios</b>, y cada ficha se puede deshacer.</li>
-        <li><b>Duplicados de socias</b> (⚙): deja como principal la postulación más reciente de cada socia repetida y marca las otras como duplicadas (no se borra nada; en su ficha: <b>Quitar la marca</b>).</li>
+        <li><b>Duplicados</b> (⚙): deja como principal la postulación más reciente de cada persona repetida (socias, o mismo RUT y nombre equivalente) y marca las otras como duplicadas (no se borra nada; en su ficha: <b>Quitar la marca</b>).</li>
   <li><b>Respaldo de correcciones</b> (⚙): descarga un archivo con todas las correcciones y pasos. Conviene hacerlo cada cierto tiempo y guardarlo fuera del computador. Restaurar un respaldo reemplaza todo: úsalo solo si hay un problema grave.</li>
         <li><b>Enlace de la planilla</b> (⚙): la dirección de la planilla de Google de donde se descargan las postulaciones.</li>
         <li><b>Historial de cambios</b> (⚙): quién cambió qué y cuándo, en toda la aplicación o en una ficha.</li>
@@ -534,9 +534,9 @@
 </div>
 
 <script src="config.js?v=5778f432"></script>
-<script src="app.js?v=1a679d37"></script>
+<script src="app.js?v=d2a6832f"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=947ab677"></script>
+<script src="ui.js?v=3a9f4ce2"></script>
 </body>
 </html>
