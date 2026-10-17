@@ -419,7 +419,7 @@ function mapearColumnas(encabezados) {
 // solo tiene texto libre en "Gestión".
 const EDITABLES = ['nombre', 'rut', 'correo', 'nacimiento', 'telefono', 'region', 'comuna', 'direccion',
   'profesion', 'situacion', 'empresa', 'origen', 'resultado', 'modalidad', 'ingreso', 'citacion',
-  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada'];
+  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva'];
 
 // La clave identifica una postulación aunque cambie su posición en la planilla:
 // fecha y hora del envío + correo original (o RUT + nombre si la fila se agregó a mano).
@@ -437,7 +437,7 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
   const original = campo => (campo === 'observaciones' ? observacionesOriginales : crudo(campo));
   for (const campo of EDITABLES) {
     // 'duplicada' (clave de la postulación principal) no es una corrección de datos: se muestra aparte.
-    if (campo === 'etapa' || campo === 'duplicada' || !(campo in ed)) continue;
+    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || !(campo in ed)) continue;
     if (String(ed[campo]).trim() !== String(original(campo)).trim()) {
       editados.push(campo); originales[campo] = original(campo);
     }
@@ -498,13 +498,15 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
     motivacion: N.normalizarTexto(v('motivacion')),
     observaciones: [v('observaciones'), v('observaciones2')].map(N.normalizarTexto).filter(Boolean).join(' · '),
     clave: claveDe(fila, mapa),
+    // «No activa»: la administración dejó de gestionar esta postulación (se oculta, no se borra). 'si' o vacío.
+    inactiva: ed.inactiva === 'si',
     // Si alguien la marcó como duplicada de otra postulación, aquí va la clave de la principal (si no, vacío).
     duplicadaDe: typeof ed.duplicada === 'string' && ed.duplicada.trim() && ed.duplicada.trim() !== claveDe(fila, mapa) ? ed.duplicada.trim() : '',
     editados,
     originales,
     pasos,
     progreso: P.progreso(pasos),
-    seguimiento: P.seguimiento(pasos, hoy, etapa),
+    seguimiento: ed.inactiva === 'si' ? null : P.seguimiento(pasos, hoy, etapa),
     alertas,
   };
 }
@@ -1054,6 +1056,20 @@ class Almacen {
     return this.modificar(clave, campos => { delete campos[campo]; });
   }
 
+  // Quita la misma corrección a muchas postulaciones, unas pocas a la vez.
+  async quitarCampoVarios(claves, campo, simultaneas = 4) {
+    const pendientes = [...claves];
+    const fallidas = [];
+    let ok = 0;
+    const trabajar = async () => {
+      for (let clave = pendientes.shift(); clave; clave = pendientes.shift()) {
+        try { await this.quitarCampo(clave, campo); ok++; } catch (e) { fallidas.push({ clave, error: e.message }); }
+      }
+    };
+    await Promise.all(Array.from({ length: simultaneas }, trabajar));
+    return { ok, fallidas };
+  }
+
   // Quita las correcciones de datos; los pasos de admisión se conservan.
   restaurar(clave) {
     return this.modificar(clave, campos => { for (const k of Object.keys(campos)) delete campos[k]; });
@@ -1494,7 +1510,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     for (const reg of r.registros) {
       const docs = documentos[reg.clave] || null;
       reg.docs = docs;
-      reg.pendienteRevision = pendienteDeRevision(docs, reg.pasos);
+      reg.pendienteRevision = !reg.inactiva && pendienteDeRevision(docs, reg.pasos); // lo no activo no genera avisos
     }
     return {
       fuente: o.fuente,
@@ -1684,6 +1700,21 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       }
       const r = await almacen.editarVarios(porClave);
       return ok({ aplicadas: r.ok, fallidas: r.fallidas.length, aceptadas: aceptadas.length, ...(await datosActuales()) });
+    }
+
+    // ---------- Postulaciones activas / no activas ----------
+    // Dejar de gestionar una postulación la oculta del listado y de los avisos; no se borra y se puede reactivar.
+    if (ruta === 'POST /api/activa') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { claves, activa } = a.cuerpo || {};
+      if (typeof activa !== 'boolean' || !Array.isArray(claves) || !claves.length || claves.length > 1000 || claves.some(x => typeof x !== 'string' || !x)) return fallo(400, 'Datos inválidos.');
+      const existentes = new Set((await datosActuales()).registros.map(r => r.clave));
+      const validas = [...new Set(claves)].filter(c => existentes.has(c));
+      if (!validas.length) return fallo(404, NO_ENCONTRADA);
+      const r = activa
+        ? await almacen.quitarCampoVarios(validas, 'inactiva')
+        : await almacen.editarVarios(Object.fromEntries(validas.map(c => [c, { inactiva: 'si' }])));
+      return ok({ cambiadas: r.ok, fallidas: r.fallidas.length, ...(await datosActuales()) });
     }
 
     // ---------- Duplicados de socias ----------

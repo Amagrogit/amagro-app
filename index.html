@@ -122,7 +122,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #quitarDuplicada,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura #crearEnlace,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -151,6 +151,10 @@
   .hist-fila:first-child { border-top:0; }
   .hist-fila .quien { font-weight:600; }
   @media (max-width:600px) { main { padding:14px 12px; } header { padding:12px; } dl { grid-template-columns:100px 1fr; } }
+  .col-sel { width:28px; text-align:center; } .col-sel input { cursor:pointer; }
+  tr.inactiva td { opacity:.6; }
+  #barraSeleccion { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #barraSeleccion[hidden] { display:none; }
   #duplicadosLista .grupo-dup { border:1px solid var(--borde); border-radius:6px; padding:6px 10px; margin-bottom:6px; background:#fff; }
   /* Ayuda: la guía de primeros pasos dentro de la aplicación */
   #panelAyuda { max-height:75vh; overflow:auto; background:#fff; }
@@ -278,6 +282,7 @@
       <ul>
         <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
         <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas.</li>
+            <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Se ocultan del listado y de los avisos, <b>no se borra nada</b>, y se ven con el filtro «No activas» (ahí se pueden <b>volver a activar</b>).</li>
         <li><b>El menú <kbd>⚙</kbd></b> (arriba a la derecha) reúne las herramientas. Cada panel que se abre tiene su botón <b>✕ Cerrar</b>.</li>
       </ul>
       
@@ -445,12 +450,21 @@
       <option value="duplicadas">Solo personas con más de una postulación</option>
       <option value="sinrespuesta">Carta enviada sin respuesta (seguimiento)</option>
       <option value="porrevisar">Documentos recibidos por revisar</option>
+      <option value="inactivas">No activas (ocultas de la gestión)</option>
       <option value="marcadas">Marcadas como duplicadas</option>
     </select>
     <select id="region"><option value="">Todas las regiones</option></select>
   </div>
+  <div id="barraSeleccion" class="aviso" hidden>
+    <b id="textoSeleccion"></b>
+    <button class="btn-peq" id="marcarNoActivas">Marcar como no activas</button>
+    <button class="sec btn-peq" id="marcarActivas">Volver a activas</button>
+    <button class="sec btn-peq" id="limpiarSeleccion">Quitar la selección</button>
+    <span class="sub">No se borra nada: las no activas se ocultan y se pueden volver a activar.</span>
+  </div>
   <div class="tabla"><table>
     <thead id="encabezadoTabla"><tr>
+      <th class="col-sel"><input type="checkbox" id="selTodas" aria-label="Seleccionar todas las de la lista" title="Seleccionar todas las de esta lista"></th>
       <th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th>
       <th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th>
       <th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>
@@ -534,9 +548,9 @@
 </div>
 
 <script src="config.js?v=5778f432"></script>
-<script src="app.js?v=d2a6832f"></script>
+<script src="app.js?v=c27d98b6"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=3a9f4ce2"></script>
+<script src="ui.js?v=246f922d"></script>
 </body>
 </html>

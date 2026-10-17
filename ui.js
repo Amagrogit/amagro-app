@@ -33,7 +33,7 @@ function cargar(resp, conservar) {
   const regs = [...new Set(datos.map(d => d.region).filter(Boolean))].sort();
   $('region').innerHTML = '<option value="">Todas las regiones</option>' + regs.map(r => `<option>${esc(r)}</option>`).join('');
   const cuenta = {};
-  datos.forEach(d => { if (!d.duplicadaDe) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
+  datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
   $('etapa').innerHTML = '<option value="">Todas las etapas</option>' +
     ETAPAS.filter(e => cuenta[e]).map(e => `<option value="${esc(e)}">${esc(e)} (${cuenta[e]})</option>`).join('');
   // Al guardar una edición se conservan los filtros y la ficha abierta
@@ -47,6 +47,8 @@ function cargar(resp, conservar) {
   actualizarAvisoDocs(datos.filter(x => x.pendienteRevision).length);
 }
 
+let ultimosVisibles = [];
+const visiblesActuales = () => ultimosVisibles;
 function pintar() {
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
@@ -54,10 +56,11 @@ function pintar() {
   // Las postulaciones marcadas como duplicadas ya están resueltas: solo se ven con el filtro «Marcadas como duplicadas».
   const vis = datos.filter(d =>
     (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo].join(' ').toLowerCase().includes(q)) &&
-    (f === 'marcadas' ? !!d.duplicadaDe : !d.duplicadaDe) &&
-    (f === 'todas' || f === 'marcadas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
+  ultimosVisibles = vis;
   // Orden: las filas sin dato quedan siempre al final, sea cual sea la dirección.
   if (orden.dir) {
     vis.sort((a, b) => {
@@ -71,7 +74,7 @@ function pintar() {
   document.querySelectorAll('#encabezadoTabla .orden').forEach(b => {
     b.querySelector('span').textContent = b.dataset.orden === orden.campo && orden.dir ? (orden.dir === 1 ? '▲' : '▼') : '';
   });
-  const activas = datos.filter(d => !d.duplicadaDe);
+  const activas = datos.filter(d => !d.duplicadaDe && !d.inactiva);
   const con = activas.filter(d => d.alertas.length).length;
   $('resumen').innerHTML =
     `<div class="tarjeta"><div class="n">${activas.length}</div>postulaciones</div>` +
@@ -79,8 +82,9 @@ function pintar() {
     `<div class="tarjeta bien"><div class="n">${activas.length - con}</div>sin alertas</div>` +
     `<div class="tarjeta mal"><div class="n">${con}</div>con alertas</div>`;
   $('filas').innerHTML = vis.length ? vis.map(d => `
-    <tr class="${d.fila === seleccion ? 'sel' : ''}">
-      <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>
+    <tr class="${d.fila === seleccion ? 'sel' : ''}${d.inactiva ? ' inactiva' : ''}">
+      <td class="col-sel"><input type="checkbox" data-sel="${esc(d.clave)}" aria-label="Seleccionar a ${esc(d.nombre)}"${seleccionadas.has(d.clave) ? ' checked' : ''}></td>
+      <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.inactiva ? ' <span class="chip" title="La administración dejó de gestionar esta postulación">No activa</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>
       <td class="fecha">${d.postulacion
         ? `<span title="${esc(d.postulacion.length > 10 ? 'Hora de envío: ' + d.postulacion.slice(11, 16) : 'Sin hora registrada')}">${esc(fechaCL(d.postulacion.slice(0, 10)))}</span>`
         : (d.marca ? `<span class="fecha-texto" title="${esc(d.marca)}">${esc(d.marca)}</span>` : '<span class="nada">—</span>')}</td>
@@ -91,7 +95,8 @@ function pintar() {
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip mal" title="${esc(d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>` : '<span class="chip ok">OK</span>'}</td>
-    </tr>`).join('') : '<tr><td colspan="9" class="vacio">Sin resultados</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="10" class="vacio">Sin resultados</td></tr>';
+  actualizarSeleccion(vis);
 }
 
 // ---- Ficha ----
@@ -213,11 +218,14 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
       </div>
       <div class="cab-botones">
         ${editando ? '' : '<button class="sec btn-peq" id="editarFicha">✎ Editar</button>'}
+        ${editando || d.inactiva ? '' : '<button class="sec btn-peq" id="alternarActiva" title="Dejar de gestionar esta postulación (se oculta, no se borra)">Marcar no activa</button>'}
         <button class="cerrar" id="cerrarFicha" aria-label="Cerrar">×</button>
       </div>
     </div>
     ${d.editados.length && !editando ? `<section class="editada">Esta ficha tiene ${d.editados.length} campo(s) corregido(s) en la app (marcados con ✎). La planilla de Google no se modifica.
       <button class="sec btn-peq" id="restaurarEd">Deshacer correcciones</button></section>` : ''}
+    ${d.inactiva && !editando ? `<section class="editada">Esta postulación está <b>no activa</b>: se oculta del listado y no genera avisos. No se ha borrado nada.
+      <button class="sec btn-peq" id="alternarActiva">Volver a activa</button></section>` : ''}
     ${d.duplicadaDe && !editando ? `<section class="editada">Marcada como <b>duplicada</b> de ${d.duplicadaDeInfo ? `la postulación de la fila <button class="enlace" data-ir="${d.duplicadaDeInfo.fila}">${d.duplicadaDeInfo.fila}</button> (${esc(d.duplicadaDeInfo.nombre)})` : 'otra postulación que ya no está en la planilla'}. No cuenta en el listado ni da alertas de duplicado.
       <button class="sec btn-peq" id="quitarDuplicada">Quitar la marca</button></section>` : ''}
     ${editando ? '' : bloquePasos(d)}
@@ -556,6 +564,43 @@ async function deshacerEdiciones() {
   mostrar('Se restauraron los datos de la planilla.');
 }
 
+// ---- Activas / no activas ----
+// Se selecciona con las casillas del listado; marcar como no activa oculta (no borra) y se puede revertir.
+const seleccionadas = new Set();
+function actualizarSeleccion(visibles) {
+  const barra = $('barraSeleccion');
+  const n = seleccionadas.size;
+  barra.hidden = !n;
+  $('textoSeleccion').textContent = n + (n === 1 ? ' postulación seleccionada' : ' postulaciones seleccionadas');
+  if (visibles) {
+    const todasMarcadas = visibles.length > 0 && visibles.every(d => seleccionadas.has(d.clave));
+    $('selTodas').checked = todasMarcadas;
+    $('selTodas').indeterminate = !todasMarcadas && visibles.some(d => seleccionadas.has(d.clave));
+  }
+}
+async function cambiarActivas(claves, activa) {
+  if (!claves.length) return;
+  if (!activa && claves.length > 1 && !confirm('¿Marcar ' + claves.length + ' postulaciones como no activas? Se ocultan del listado y de los avisos; no se borra nada y se pueden volver a activar.')) return;
+  const r = await post('/api/activa', { claves, activa });
+  if (r.error) return mostrar(r.error, true);
+  claves.forEach(c => seleccionadas.delete(c));
+  cargar(r, true);
+  mostrar(r.cambiadas + (r.cambiadas === 1 ? ' postulación marcada como ' : ' postulaciones marcadas como ') + (activa ? 'activa' : 'no activa') + (r.fallidas ? ' (' + r.fallidas + ' no se pudieron guardar: reintenta)' : '') + '.');
+}
+$('filas').addEventListener('change', e => {
+  const c = e.target.closest('[data-sel]'); if (!c) return;
+  c.checked ? seleccionadas.add(c.dataset.sel) : seleccionadas.delete(c.dataset.sel);
+  actualizarSeleccion(visiblesActuales());
+});
+$('selTodas').addEventListener('change', () => {
+  const vis = visiblesActuales();
+  vis.forEach(d => ($('selTodas').checked ? seleccionadas.add(d.clave) : seleccionadas.delete(d.clave)));
+  pintar();
+});
+$('marcarNoActivas').addEventListener('click', () => cambiarActivas([...seleccionadas], false));
+$('marcarActivas').addEventListener('click', () => cambiarActivas([...seleccionadas], true));
+$('limpiarSeleccion').addEventListener('click', () => { seleccionadas.clear(); pintar(); });
+
 async function quitarMarcaDuplicada() {
   const d = datos.find(x => x.fila === seleccion);
   if (!d || !confirm('¿Quitar la marca de duplicada? Esta postulación volverá al listado y a contar para las alertas de duplicado.')) return;
@@ -616,6 +661,7 @@ $('ficha').addEventListener('click', e => {
   if (on('guardarEd')) return guardarEdicion();
   if (on('restaurarEd')) return deshacerEdiciones();
   if (on('quitarDuplicada')) return quitarMarcaDuplicada();
+  if (on('alternarActiva')) { const d = datos.find(x => x.fila === seleccion); return d && cambiarActivas([d.clave], !!d.inactiva); }
   if (on('prepararMensaje')) return abrirModalMensaje();
   if (on('verCarta')) return abrirModalCarta();
   if (on('crearEnlace')) return crearEnlaceSubida();
@@ -1438,6 +1484,7 @@ function lineaHistorial(h, conNombre) {
   const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
   const etiquetaPaso = id => (pasosDef.find(p => p.id === id) || {}).etiqueta || id;
   const cambios = Object.entries(h.detalle || {}).map(([k, v]) => {
+    if (k === 'inactiva') return v.despues ? 'la marcó como no activa' : 'la volvió a activa';
     if (k === 'duplicada') return v.despues ? 'la marcó como duplicada de otra postulación' : 'quitó la marca de duplicada';
     if (h.accion === 'paso') return v.despues ? 'marcó «' + etiquetaPaso(k) + '» (' + textoValor(v.despues) + ')' : 'desmarcó «' + etiquetaPaso(k) + '»';
     return k + ': ' + textoValor(v.antes) + ' → ' + textoValor(v.despues);
