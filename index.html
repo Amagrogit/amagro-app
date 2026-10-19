@@ -122,7 +122,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura #crearEnlace,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -283,6 +283,7 @@
         <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
         <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas.</li>
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Se ocultan del listado y de los avisos, <b>no se borra nada</b>, y se ven con el filtro «No activas» (ahí se pueden <b>volver a activar</b>).</li>
+        <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
         <li><b>El menú <kbd>⚙</kbd></b> (arriba a la derecha) reúne las herramientas. Cada panel que se abre tiene su botón <b>✕ Cerrar</b>.</li>
       </ul>
       
@@ -517,6 +518,36 @@
   </div>
 </div>
 
+<div id="modalNoAcep" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="naTitulo">
+  <div class="modal-caja modal-ancha">
+    <div class="modal-cab">
+      <h2 id="naTitulo">Carta de no aceptación · solo mujeres del ámbito privado</h2>
+      <button class="cerrar" id="cerrarNa" aria-label="Cerrar">×</button>
+    </div>
+    <div id="naAvisos"></div>
+    <div class="carta-grid">
+      <div class="carta-vista">
+        <iframe id="vistaNa" title="Vista previa de la carta en PDF"></iframe>
+        <p class="sub" style="margin:6px 0 0"><a id="naNuevaPestana" href="#" target="_blank" rel="noopener">Abrir en una pestaña nueva</a></p>
+      </div>
+      <div class="carta-correo">
+        <h3>Correo para la postulante</h3>
+        <p id="naSinCorreo" class="sub" style="color:var(--alerta);margin:0 0 6px" hidden>Esta persona no tiene un correo válido: contáctala por otro medio.</p>
+        <div class="sub">Para: <b id="naPara"></b></div>
+        <div class="sub">Asunto: <b id="naAsunto"></b></div>
+        <textarea id="naCuerpo" aria-label="Texto del correo"></textarea>
+        <div class="modal-pie">
+          <button class="btn-peq" id="naGmail" title="Abre Gmail en otra pestaña con el mensaje listo. Tú revisas y pulsas Enviar">✉ Abrir en Gmail</button>
+          <button class="sec btn-peq" id="naPdf">⬇ Descargar PDF (con logo)</button>
+          <button class="sec btn-peq" id="naCopiar">Copiar mensaje</button>
+        </div>
+        <div id="naEstado" class="sub" role="status" style="font-weight:600;margin-top:6px;min-height:1.2em"></div>
+        <p class="sub" style="margin:4px 0 0">La app no envía correos: se abre Gmail con el mensaje listo y tú pulsas Enviar. El mismo texto va en el PDF, por si prefieres adjuntarlo.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="modalDoc" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="docTitulo">
   <div class="modal-caja modal-ancha">
     <div class="modal-cab"><h2 id="docTitulo">Documento recibido</h2><button class="cerrar" id="cerrarDoc" aria-label="Cerrar">×</button></div>
@@ -548,9 +579,9 @@
 </div>
 
 <script src="config.js?v=5778f432"></script>
-<script src="app.js?v=c27d98b6"></script>
+<script src="app.js?v=6d2a31ff"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=246f922d"></script>
+<script src="ui.js?v=c4a35741"></script>
 </body>
 </html>

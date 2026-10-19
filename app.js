@@ -1435,6 +1435,7 @@ const { ErrorSupabase } = require('./supabase');
 const { leerSocias, planificar, camposAAplicar } = require('./socias');
 const { camposConAlerta, evaluarPropuesta, valorActual } = require('./correcciones');
 const { proponer, planDeAplicacion } = require('./duplicados');
+const noAceptacion = require('./cartaNoAceptacion');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1852,6 +1853,17 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!E.carta) return fallo(501, 'Este equipo no puede preparar la carta.');
       return { estado: 200, bytes: await E.carta.generarCarta(registro, { fecha: fecha === true }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': `attachment; filename="${E.carta.nombreArchivo(registro.nombre)}"`, 'Cache-Control': 'no-store' } };
+    }
+
+    // Carta de no aceptación por el perfil de socias (mujeres del mundo privado). Solo para postulaciones en etapa «No califica».
+    // El texto sale de un solo lugar (lib/cartaNoAceptacion.js): el correo y el PDF dicen lo mismo.
+    if (ruta === 'GET /api/carta-no-aceptacion/texto' || ruta === 'POST /api/carta-no-aceptacion') {
+      const registro = await buscarRegistro(ruta.startsWith('GET') ? consulta.get('clave') : (analizar(cuerpo).cuerpo || {}).clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (registro.etapa !== 'No califica') return fallo(400, 'Esta carta solo se prepara para postulaciones en la etapa «No califica».');
+      if (ruta.startsWith('GET')) return ok({ ...noAceptacion.correo(registro), carnetPendiente: !!(registro.docs && registro.docs.carnet) });
+      return { estado: 200, bytes: await noAceptacion.generar(registro, { logo: await E.logo() }), tipo: 'application/pdf',
+        cabeceras: { 'Content-Disposition': 'attachment; filename="' + noAceptacion.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
     }
 
     // Thunderbird: solo existe en el computador (en la web no hay).
@@ -2279,6 +2291,98 @@ function generarCarta(datos, { fecha = false, ahora = new Date(), logo = null } 
 }
 
 module.exports = { generarCarta, nombreArchivo, titulo, hoyCL, leerLogo, dibujarCarta, DESTINATARIA, MARGEN, ANCHO };
+
+});
+
+definir("lib/cartaNoAceptacion", function (module, exports, require, __dirname, Buffer) {
+// Carta de no aceptación por el perfil de socias (solo mujeres del mundo privado). Es la ÚNICA carta de no aceptación que prepara
+// la aplicación; las demás situaciones las comunica el Directorio por su cuenta. El texto lo revisó y aprobó AMAGRO.
+// Lleva el logo (la envía la asociación) y se usa en dos formas: el PDF para adjuntar y el texto del correo (el mismo contenido).
+const { Lienzo, crearPdf, leerImagen, medir } = require('./pdf');
+const { titulo, MARGEN, ANCHO } = require('./carta');
+const { sinTildes } = require('./normalizar');
+
+// Cada párrafo es una lista de trozos { t: texto, b: negrita }.
+const t = (texto, b = false) => ({ t: texto, b });
+const PARRAFOS = [
+  [t('Te agradecemos sinceramente el interés en ser parte de AMAGRO AG y el tiempo que dedicaste a tu solicitud de ingreso.')],
+  [t('Lamentamos comunicarte que tu solicitud '), t('no pudo ser aceptada', true), t(', pues el perfil de socias que incluyen nuestros estatutos (publicado en el formulario de postulación) establece que AMAGRO AG representa a mujeres del mundo '), t('privado', true), t(' vinculadas al agro, por lo que no incluye a quienes trabajan en el sector público.')],
+  [t('Esta decisión no se trata de una evaluación personal ni de tu trayectoria, por lo cual si tu situación laboral cambia en el futuro, puedes volver a postular.')],
+  [t('Respecto de tus datos: '), t('la copia de tu carnet de identidad ya fue eliminada', true), t(' y no se conserva para resguardar la seguridad de tus datos.')],
+  [t('Si tienes dudas, puedes escribirnos a '), t('socias@amagroag.cl', true), t('.')],
+  [t('Te deseamos mucho éxito.')],
+];
+const DESPEDIDA = ['Hasta pronto,', '', 'Equipo', 'AMAGRO AG'];
+const CIUDAD = 'Santiago';
+const ASUNTO = 'AMAGRO AG · Respuesta a tu solicitud de ingreso';
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const fechaLarga = (ahora = new Date()) => `${ahora.getDate()} de ${MESES[ahora.getMonth()]} de ${ahora.getFullYear()}`;
+
+const sinFormato = p => p.map(x => x.t).join('');
+const nombreDe = registro => titulo(registro.nombre) || 'postulante';
+
+function nombreArchivo(nombre) {
+  const base = sinTildes(String(nombre || '')).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+  return `Carta_respuesta_${titulo(base.replace(/_/g, ' ')).replace(/ /g, '_') || 'postulante'}.pdf`;
+}
+
+// Texto para el correo (sin la línea de ciudad y fecha: el correo ya trae la fecha).
+function correo(registro) {
+  const correoInvalido = !registro.correo || registro.alertas.some(a => /^Correo inválido/.test(a));
+  return {
+    correoInvalido,
+    destinatario: correoInvalido ? '' : registro.correo,
+    asunto: ASUNTO,
+    cuerpo: [`Estimada ${nombreDe(registro)}:`, '', ...PARRAFOS.flatMap(p => [sinFormato(p), '']), ...DESPEDIDA].join('\n'),
+  };
+}
+
+// ---- PDF (tamaño carta, igual que la carta de solicitud) ----
+const TAM = 11, INTERLINEA = 14.5, SEPARACION = 10;
+const LOGO_MAX = { ancho: 150, alto: 82 };
+
+// Párrafo con palabras en negrita, alineado a la izquierda. Devuelve la nueva posición vertical.
+function parrafoRico(lienzo, y, trozos, despues = SEPARACION) {
+  const palabras = trozos.flatMap(x => x.t.split(/\s+/).filter(Boolean).map(w => ({ w, b: x.b })));
+  const espacio = medir(' ', TAM);
+  const lineas = [];
+  let linea = [], largo = 0;
+  for (const p of palabras) {
+    const ancho = medir(p.w, TAM, p.b);
+    if (linea.length && largo + espacio + ancho > ANCHO) { lineas.push(linea); linea = []; largo = 0; }
+    largo += (linea.length ? espacio : 0) + ancho;
+    linea.push({ ...p, ancho });
+  }
+  if (linea.length) lineas.push(linea);
+  lineas.forEach((l, i) => {
+    let x = MARGEN;
+    for (const p of l) { lienzo.texto(x, y + i * INTERLINEA + 10.4, p.w, { negrita: p.b, tam: TAM }); x += p.ancho + espacio; }
+  });
+  return y + lineas.length * INTERLINEA + despues;
+}
+
+function generar(registro, { ahora = new Date(), logo = null } = {}) {
+  const lienzo = new Lienzo(612, 792);
+  let imagen = null, y = 58;
+  if (logo) {
+    try {
+      imagen = leerImagen(logo);
+      const escala = Math.min(LOGO_MAX.ancho / imagen.ancho, LOGO_MAX.alto / imagen.alto);
+      const w = imagen.ancho * escala, h = imagen.alto * escala;
+      lienzo.imagen(MARGEN, y, w, h);
+      y += h + 28;
+    } catch { imagen = null; } // un logo dañado no impide generar la carta
+  }
+  y = parrafoRico(lienzo, y, [t(`${CIUDAD}, ${fechaLarga(ahora)}`)], SEPARACION + 4);
+  y = parrafoRico(lienzo, y, [t(`Estimada ${nombreDe(registro)}:`)], SEPARACION + 4);
+  for (const p of PARRAFOS) y = parrafoRico(lienzo, y, p, SEPARACION + 3);
+  y += 8;
+  for (const l of DESPEDIDA) { y = l ? parrafoRico(lienzo, y, [t(l)], 0) : y + INTERLINEA; }
+  return crearPdf(lienzo, { imagen, titulo: 'Respuesta a la solicitud de ingreso - AMAGRO AG' });
+}
+
+module.exports = { generar, correo, nombreArchivo, fechaLarga, PARRAFOS, ASUNTO };
 
 });
 

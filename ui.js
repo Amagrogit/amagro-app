@@ -224,6 +224,8 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
     </div>
     ${d.editados.length && !editando ? `<section class="editada">Esta ficha tiene ${d.editados.length} campo(s) corregido(s) en la app (marcados con ✎). La planilla de Google no se modifica.
       <button class="sec btn-peq" id="restaurarEd">Deshacer correcciones</button></section>` : ''}
+    ${d.etapa === 'No califica' && !editando ? `<section class="editada">Etapa «No califica». Si el motivo es que trabaja en el sector público, hay una carta lista para responderle.
+      <button class="sec btn-peq" id="abrirNoAcep">✉ Carta: solo mujeres del ámbito privado</button></section>` : ''}
     ${d.inactiva && !editando ? `<section class="editada">Esta postulación está <b>no activa</b>: se oculta del listado y no genera avisos. No se ha borrado nada.
       <button class="sec btn-peq" id="alternarActiva">Volver a activa</button></section>` : ''}
     ${d.duplicadaDe && !editando ? `<section class="editada">Marcada como <b>duplicada</b> de ${d.duplicadaDeInfo ? `la postulación de la fila <button class="enlace" data-ir="${d.duplicadaDeInfo.fila}">${d.duplicadaDeInfo.fila}</button> (${esc(d.duplicadaDeInfo.nombre)})` : 'otra postulación que ya no está en la planilla'}. No cuenta en el listado ni da alertas de duplicado.
@@ -564,6 +566,62 @@ async function deshacerEdiciones() {
   mostrar('Se restauraron los datos de la planilla.');
 }
 
+// ---- Carta de no aceptación (mujeres del ámbito privado) ----
+// Se abre solo para postulaciones en etapa «No califica». El texto y el PDF salen del mismo lugar (el servidor).
+let naActual = null; // { d, url, nombre, correo }
+function estadoNa(texto, error) {
+  const el = $('naEstado');
+  el.textContent = texto || '';
+  el.style.color = error ? 'var(--alerta)' : 'var(--verde)';
+}
+function cerrarModalNoAcep() {
+  if (naActual && naActual.url) URL.revokeObjectURL(naActual.url);
+  $('vistaNa').src = 'about:blank';
+  $('modalNoAcep').hidden = true;
+  naActual = null;
+}
+async function abrirModalNoAcep() {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d) return;
+  const actual = naActual = { d, url: null, nombre: null, correo: null };
+  $('naAvisos').innerHTML = '<p class="sub" style="margin:0 0 6px">Úsala <b>solo</b> si el motivo es que la persona trabaja en el sector público (el perfil de socias es de mujeres del mundo privado). Para cualquier otro motivo, la respuesta la da el Directorio por su cuenta.</p>' +
+    (d.docs && d.docs.carnet ? '<p class="sub" style="color:var(--alerta);margin:0 0 6px"><b>Esta persona todavía tiene su carnet guardado.</b> La carta dice que ya fue eliminado: bórralo desde la ficha (sección Carta y documentos) antes de enviarla.</p>' : '');
+  $('naPara').textContent = '—'; $('naAsunto').textContent = ''; $('naCuerpo').value = ''; $('naSinCorreo').hidden = true;
+  $('vistaNa').src = 'about:blank';
+  estadoNa('Preparando la carta…');
+  $('modalNoAcep').hidden = false;
+  try {
+    const r = await fetch('/api/carta-no-aceptacion/texto?clave=' + encodeURIComponent(d.clave));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'No se pudo preparar la carta.');
+    if (naActual !== actual) return;
+    actual.correo = j;
+    $('naPara').textContent = j.destinatario || '—'; $('naAsunto').textContent = j.asunto; $('naCuerpo').value = j.cuerpo; $('naSinCorreo').hidden = !j.correoInvalido;
+    const p = await fetch('/api/carta-no-aceptacion', { method: 'POST', body: JSON.stringify({ clave: d.clave }) });
+    if (!p.ok) throw new Error(((await p.json().catch(() => ({}))).error) || 'No se pudo generar el PDF.');
+    actual.nombre = ((p.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'Carta_respuesta.pdf';
+    const blob = await p.blob();
+    if (naActual !== actual) return;
+    actual.url = URL.createObjectURL(blob);
+    $('vistaNa').src = actual.url + '#toolbar=0&navpanes=0';
+    $('naNuevaPestana').href = actual.url;
+    estadoNa('');
+  } catch (e) { if (naActual === actual) estadoNa(e.message, true); }
+}
+$('modalNoAcep').addEventListener('click', e => { if (e.target === $('modalNoAcep') || e.target.closest('#cerrarNa')) cerrarModalNoAcep(); });
+$('naGmail').addEventListener('click', () => {
+  if (!naActual || !naActual.correo) return estadoNa('La carta aún se está preparando: espera un momento.', true);
+  const ventana = window.open(urlGmail({ destinatario: naActual.correo.destinatario, asunto: naActual.correo.asunto, cuerpo: $('naCuerpo').value, cuenta: correoEnvio }), '_blank');
+  if (ventana) ventana.opener = null;
+  estadoNa(ventana ? '✓ Se abrió Gmail en otra pestaña con el mensaje listo. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + ').' : '.')
+    : 'El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', !ventana);
+});
+$('naPdf').addEventListener('click', () => {
+  if (!naActual || !naActual.url) return estadoNa('El PDF aún se está generando: espera un momento.', true);
+  const a = document.createElement('a'); a.href = naActual.url; a.download = naActual.nombre; a.click();
+});
+$('naCopiar').addEventListener('click', async () => estadoNa((await copiarTexto($('naCuerpo').value)) ? 'Mensaje copiado.' : 'No se pudo copiar: selecciónalo y presiona Ctrl+C.', false));
+
 // ---- Activas / no activas ----
 // Se selecciona con las casillas del listado; marcar como no activa oculta (no borra) y se puede revertir.
 const seleccionadas = new Set();
@@ -661,6 +719,7 @@ $('ficha').addEventListener('click', e => {
   if (on('guardarEd')) return guardarEdicion();
   if (on('restaurarEd')) return deshacerEdiciones();
   if (on('quitarDuplicada')) return quitarMarcaDuplicada();
+  if (on('abrirNoAcep')) return abrirModalNoAcep();
   if (on('alternarActiva')) { const d = datos.find(x => x.fila === seleccion); return d && cambiarActivas([d.clave], !!d.inactiva); }
   if (on('prepararMensaje')) return abrirModalMensaje();
   if (on('verCarta')) return abrirModalCarta();
@@ -812,6 +871,7 @@ $('cartaConEnlace').addEventListener('change', () => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (!$('modalDoc').hidden) return cerrarDocumento();
+  if (!$('modalNoAcep').hidden) return cerrarModalNoAcep();
   if (!$('modalCarta').hidden) return cerrarModalCarta();
   if (!$('modalMensaje').hidden) return cerrarModalMensaje();
   if (!$('menuAjustes').hidden) { cerrarMenu(); $('btnMenu').focus(); return; }
@@ -1223,7 +1283,7 @@ async function consultarPendientes() {
     actualizarAvisoCorrecciones(p.correcciones || 0);
     if (!$('panelCorrecciones').hidden && firmaPendientes !== null && p.firma !== firmaPendientes) cargarCorrecciones();
     const cambio = firmaPendientes !== null && p.firma !== firmaPendientes;
-    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden;
+    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden;
     if (cambio && !ocupada) {
       const nuevos = p.pendientes > datos.filter(x => x.pendienteRevision).length;
       const d = await fetch('/api/postulaciones');
