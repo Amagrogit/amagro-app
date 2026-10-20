@@ -1900,10 +1900,17 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     if (ruta === 'POST /api/comisiones/borrar') {
       if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar la lista de comisiones.');
       const a = analizar(cuerpo); if (a.error) return a.error;
-      const { id } = a.cuerpo || {};
+      const { id, confirmar } = a.cuerpo || {};
       if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Comisión inválida.');
-      const integrantes = (await datosActuales()).registros.filter(r => r.comisiones.some(c => c.id === id)).length;
-      if (integrantes) return fallo(409, 'Todavía tiene ' + integrantes + (integrantes === 1 ? ' integrante' : ' integrantes') + ': quítalas primero de la comisión.');
+      // Una comisión con integrantes solo se borra si se confirma: se la quita de la ficha de cada una (queda en el historial de cada ficha).
+      const integrantes = (await datosActuales()).registros.filter(r => r.comisionesAsignadas.some(c => c.id === id));
+      if (integrantes.length && confirmar !== true) {
+        return fallo(409, 'Tiene ' + integrantes.length + (integrantes.length === 1 ? ' integrante' : ' integrantes') + '. Si la borras, se la quitará de su ficha.', { integrantes: integrantes.length });
+      }
+      if (integrantes.length) {
+        const r = await almacen.editarVarios(Object.fromEntries(integrantes.map(x => [x.clave, { comisiones: JSON.stringify(x.comisionesAsignadas.filter(c => c.id !== id)) }])));
+        if (r.fallidas.length) return fallo(502, 'No se pudo quitar la comisión de ' + r.fallidas.length + ' ficha(s); no se borró nada más. Vuelve a intentarlo.');
+      }
       await almacen.borrarComision(id);
       return ok(await datosActuales());
     }

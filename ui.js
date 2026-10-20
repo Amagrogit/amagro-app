@@ -720,8 +720,12 @@ $('comisionesLista').addEventListener('click', async e => {
     return cambiarListaComisiones('/api/comisiones/guardar', { id: c.id, nombre, estatutaria: c.estatutaria }, 'Comisión renombrada.');
   }
   if (e.target.closest('[data-borrar-comision]')) {
-    if (!confirm('¿Borrar la comisión «' + c.nombre + '»? Solo se puede si no tiene integrantes.')) return;
-    return cambiarListaComisiones('/api/comisiones/borrar', { id: c.id }, 'Comisión borrada.');
+    const integrantes = datos.filter(d => d.comisiones.some(x => x.id === c.id)).length;
+    const aviso = integrantes
+      ? '«' + c.nombre + '» tiene ' + integrantes + (integrantes === 1 ? ' integrante' : ' integrantes') + '. Si la borras, se la quitará de la ficha de cada una (queda anotado en el historial de cada ficha).\n\n¿Borrarla igual?'
+      : '¿Borrar la comisión «' + c.nombre + '»?';
+    if (!confirm(aviso)) return;
+    return cambiarListaComisiones('/api/comisiones/borrar', { id: c.id, confirmar: true }, 'Comisión borrada' + (integrantes ? ' y quitada de ' + integrantes + (integrantes === 1 ? ' ficha.' : ' fichas.') : '.'));
   }
 });
 
