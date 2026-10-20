@@ -155,6 +155,9 @@
   tr.inactiva td { opacity:.6; }
   #barraSeleccion { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   #barraSeleccion[hidden] { display:none; }
+  .aviso-docs { position:relative; padding-right:44px; }
+  .cerrar-aviso { position:absolute; top:50%; right:10px; transform:translateY(-50%); background:transparent; border:0; border-radius:6px; padding:4px 9px; font-size:16px; line-height:1; color:var(--suave); cursor:pointer; }
+  .cerrar-aviso:hover { background:rgba(0,0,0,.08); color:var(--texto); }
   #duplicadosLista .grupo-dup { border:1px solid var(--borde); border-radius:6px; padding:6px 10px; margin-bottom:6px; background:#fff; }
   /* Ayuda: la guía de primeros pasos dentro de la aplicación */
   #panelAyuda { max-height:75vh; overflow:auto; background:#fff; }
@@ -236,10 +239,12 @@
   <div id="avisoDocs" class="aviso aviso-docs" role="status" hidden>
     <b id="avisoDocsTexto"></b>
     <button class="btn-peq" id="verPorRevisar" style="margin-left:8px">Ver quiénes</button>
+    <button class="cerrar-aviso" id="cerrarAvisoDocs" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
   </div>
   <div id="avisoCorrecciones" class="aviso aviso-docs" role="status" hidden>
     <b id="avisoCorreccionesTexto"></b>
     <button class="btn-peq" id="verCorrecciones" style="margin-left:8px">Revisar</button>
+    <button class="cerrar-aviso" id="cerrarAvisoCorrecciones" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
   </div>
   <div id="panelCorrecciones" class="aviso" hidden>
     <b>Correcciones enviadas por las postulantes</b>
@@ -281,7 +286,7 @@
       <h2>2. Qué verás</h2>
       <ul>
         <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
-        <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas.</li>
+        <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas y una ✕ para cerrarlo; vuelve a salir al entrar o al actualizar.</li>
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Se ocultan del listado y de los avisos, <b>no se borra nada</b>, y se ven con el filtro «No activas» (ahí se pueden <b>volver a activar</b>).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
         <li><b>Postulación aprobada:</b> en su ficha aparece <b>✉ Carta de bienvenida</b>: un correo corto con el enlace a su carta de bienvenida (PDF con logo y su nombre) y los enlaces a los estatutos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
@@ -618,6 +623,6 @@
 <script src="app.js?v=ee2196f8"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=af1e08a6"></script>
+<script src="ui.js?v=6e12a136"></script>
 </body>
 </html>

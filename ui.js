@@ -1069,6 +1069,7 @@ $('actualizar').addEventListener('click', async () => {
       if (r.error.includes('configura')) { cerrarPaneles(); $('panelConfig').hidden = false; }
     } else {
       cerrarPaneles();
+      reabrirAvisos();
       cargar(r);
       mostrar(r.primera ? `Planilla cargada: ${r.total} postulaciones.`
         : r.nuevos ? `${r.nuevos} postulación(es) nueva(s). Total: ${r.total}.` : `Sin cambios. Total: ${r.total}.`);
@@ -1336,14 +1337,28 @@ $('sociasResultado').addEventListener('click', async e => {
   mostrar('Listo: se actualizaron ' + r.aplicadas + ' fichas' + (r.fallidas ? ' (' + r.fallidas + ' no se pudieron guardar: vuelve a intentar)' : '') + '.', !!r.fallidas);
 });
 
+// ---- Avisos de novedades (documentos y correcciones por revisar) ----
+// Cada aviso azul se puede cerrar con la ✕ y no vuelve a salir hasta que se entre de nuevo o se actualice la pantalla principal
+// (↻ Actualizar o recargar la página). Las consultas automáticas de cada minuto no lo vuelven a abrir.
+const avisoCerrado = { docs: false, correcciones: false };
+let ultimoDocs = 0, ultimoCorrecciones = 0;
+function reabrirAvisos() {
+  avisoCerrado.docs = avisoCerrado.correcciones = false;
+  actualizarAvisoDocs(ultimoDocs);
+  actualizarAvisoCorrecciones(ultimoCorrecciones);
+}
+$('cerrarAvisoDocs').addEventListener('click', () => { avisoCerrado.docs = true; $('avisoDocs').hidden = true; });
+$('cerrarAvisoCorrecciones').addEventListener('click', () => { avisoCerrado.correcciones = true; $('avisoCorrecciones').hidden = true; });
 // ---- Aviso de documentos por revisar ----
 function actualizarAvisoDocs(n) {
-  $('avisoDocs').hidden = !n;
+  ultimoDocs = n;
+  $('avisoDocs').hidden = !n || avisoCerrado.docs;
   $('avisoDocsTexto').textContent = n === 1 ? '1 postulante envió documentos y espera revisión.' : n + ' postulantes enviaron documentos y esperan revisión.';
 }
 // ---- Correcciones enviadas por las postulantes ----
 function actualizarAvisoCorrecciones(n) {
-  $('avisoCorrecciones').hidden = !n;
+  ultimoCorrecciones = n;
+  $('avisoCorrecciones').hidden = !n || avisoCerrado.correcciones;
   $('avisoCorreccionesTexto').textContent = n === 1 ? '1 postulante envió una corrección de sus datos.' : n + ' postulantes enviaron correcciones de sus datos.';
 }
 const ETIQUETA_CAMPO = { rut: 'RUT', nacimiento: 'Nacimiento', telefono: 'Teléfono', region: 'Región', correo: 'Correo', nombre: 'Nombre' };
@@ -1434,6 +1449,7 @@ let usuarioActual = null;
 
 async function entrarALaApp(usuario) {
   usuarioActual = usuario;
+  avisoCerrado.docs = avisoCerrado.correcciones = false; // al entrar, los avisos de novedades vuelven a salir
   $('login').hidden = true;
   document.body.classList.toggle('lectura', !!usuario && !puedeEditarRol(usuario.rol));
   $('usuario').textContent = usuario ? usuario.nombre + ' · ' + (ROL[usuario.rol] || usuario.rol) : '';
