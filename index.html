@@ -284,7 +284,7 @@
         <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas.</li>
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Se ocultan del listado y de los avisos, <b>no se borra nada</b>, y se ven con el filtro «No activas» (ahí se pueden <b>volver a activar</b>).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
-        <li><b>Postulación aprobada:</b> en su ficha aparece <b>✉ Carta de bienvenida</b>: un correo con la bienvenida y los enlaces al resumen de los estatutos y a los estatutos completos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
+        <li><b>Postulación aprobada:</b> en su ficha aparece <b>✉ Carta de bienvenida</b>: un correo corto con el enlace a su carta de bienvenida (PDF con logo y su nombre) y los enlaces a los estatutos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
         <li><b>El menú <kbd>⚙</kbd></b> (arriba a la derecha) reúne las herramientas. Cada panel que se abre tiene su botón <b>✕ Cerrar</b>.</li>
       </ul>
       
@@ -520,27 +520,37 @@
 </div>
 
 <div id="modalBienvenida" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="bvTitulo">
-  <div class="modal-caja">
+  <div class="modal-caja modal-ancha">
     <div class="modal-cab">
       <h2 id="bvTitulo">Carta de bienvenida</h2>
       <button class="cerrar" id="cerrarBv" aria-label="Cerrar">×</button>
     </div>
     <div id="bvAvisos"></div>
-    <p id="bvSinCorreo" class="sub" style="color:var(--alerta);margin:0 0 6px" hidden>Esta persona no tiene un correo válido: contáctala por otro medio.</p>
-    <div class="sub">Para: <b id="bvPara"></b></div>
-    <div class="sub">Asunto: <b id="bvAsunto"></b></div>
-    <textarea id="bvCuerpo" aria-label="Texto del correo" style="min-height:min(380px,48vh)"></textarea>
-    <div class="modal-pie">
-      <button class="btn-peq" id="bvGmail" title="Copia el mensaje y abre Gmail en otra pestaña. Tú revisas y pulsas Enviar">✉ Abrir en Gmail</button>
-      <button class="sec btn-peq" id="bvCopiar">Copiar mensaje</button>
+    <div class="carta-grid">
+      <div class="carta-vista">
+        <iframe id="vistaBv" title="Vista previa de la carta de bienvenida en PDF"></iframe>
+        <p class="sub" style="margin:6px 0 0">Esta es la carta que ella descargará desde su enlace · <a id="bvNuevaPestana" href="#" target="_blank" rel="noopener">Abrir en una pestaña nueva</a></p>
+      </div>
+      <div class="carta-correo">
+        <h3>Correo para la socia</h3>
+        <p id="bvSinCorreo" class="sub" style="color:var(--alerta);margin:0 0 6px" hidden>Esta persona no tiene un correo válido: contáctala por otro medio.</p>
+        <div class="sub">Para: <b id="bvPara"></b></div>
+        <div class="sub">Asunto: <b id="bvAsunto"></b></div>
+        <textarea id="bvCuerpo" aria-label="Texto del correo"></textarea>
+        <div class="modal-pie">
+          <button class="btn-peq" id="bvGmail" title="Crea el enlace a su carta y abre Gmail con el mensaje listo. Tú revisas y pulsas Enviar">✉ Abrir en Gmail</button>
+          <button class="sec btn-peq" id="bvPdf">⬇ Descargar PDF</button>
+          <button class="sec btn-peq" id="bvCopiar">Copiar mensaje</button>
+        </div>
+        <div id="bvEstado" class="sub" role="status" style="font-weight:600;margin-top:6px;min-height:1.2em"></div>
+        <div id="bvRegistro" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--borde)">
+          <span id="bvYaEnviada" class="sub" style="color:var(--verde);font-weight:600" hidden></span>
+          <button class="sec btn-peq" id="bvDeshacer" hidden title="Quita la marca de &quot;Bienvenida enviada&quot; de los pasos de la ficha">Deshacer</button>
+          <span id="bvAyuda" class="sub">Al abrir Gmail desde aquí, queda anotado el paso «Bienvenida enviada» en la ficha. Si al final no la envías, pulsa Deshacer.</span>
+        </div>
+        <p class="sub" style="margin:4px 0 0">La app no envía correos: se abre Gmail con el mensaje y tú pulsas Enviar. El enlace a la carta vale 60 días y se puede abrir varias veces; cada vez que abres Gmail se crea uno nuevo y el anterior deja de servir.</p>
+      </div>
     </div>
-    <div id="bvEstado" class="sub" role="status" style="font-weight:600;margin-top:6px;min-height:1.2em"></div>
-    <div id="bvRegistro" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--borde)">
-      <span id="bvYaEnviada" class="sub" style="color:var(--verde);font-weight:600" hidden></span>
-      <button class="sec btn-peq" id="bvDeshacer" hidden title="Quita la marca de &quot;Bienvenida enviada&quot; de los pasos de la ficha">Deshacer</button>
-      <span id="bvAyuda" class="sub">Al abrir Gmail desde aquí, queda anotado el paso «Bienvenida enviada» en la ficha. Si al final no la envías, pulsa Deshacer.</span>
-    </div>
-    <p class="sub" style="margin:4px 0 0">La app no envía correos: se abre Gmail con el mensaje y tú pulsas Enviar. Puedes editar el texto antes de enviarlo.</p>
   </div>
 </div>
 
@@ -605,9 +615,9 @@
 </div>
 
 <script src="config.js?v=5778f432"></script>
-<script src="app.js?v=d1d149b8"></script>
+<script src="app.js?v=ee2196f8"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=115807d9"></script>
+<script src="ui.js?v=af1e08a6"></script>
 </body>
 </html>

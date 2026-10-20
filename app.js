@@ -1187,6 +1187,20 @@ class Almacen {
     await this.sesion.pedir('POST', '/functions/v1/documentos', { cuerpo: fd });
   }
 
+  // Deja lista, en el almacenamiento privado, la carta de bienvenida de esa persona (PDF con su nombre) para que la descargue desde su enlace.
+  async prepararBienvenida(clave, pdf) {
+    const fd = new FormData();
+    fd.set('accion', 'preparar_carta'); fd.set('tipo', 'bienvenida'); fd.set('clave', clave);
+    fd.set('carta', new Blob([pdf], { type: 'application/pdf' }), 'carta.pdf');
+    await this.sesion.pedir('POST', '/functions/v1/documentos', { cuerpo: fd });
+  }
+
+  // Enlace único para que la socia descargue su carta de bienvenida. El código completo solo se ve ahora: la base guarda su huella.
+  async crearEnlaceBienvenida(clave, dias = 60) {
+    const { datos } = await this.sesion.pedir('POST', 'rpc/crear_enlace_bienvenida', { cuerpo: { p_clave: clave, p_dias: dias } });
+    return datos;
+  }
+
   // Resumen de lo recibido por postulante: { [clave]: { recibidos, ultimo, carnet, carnetBorrado } } (para avisar qué hay por revisar).
   async resumenDocumentos() {
     const res = {};
@@ -1531,6 +1545,8 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
   const datosActuales = async () => respuestaDatos(await leerOrigen());
   const buscarRegistro = async clave => typeof clave === 'string' && (await datosActuales()).registros.find(r => r.clave === clave);
   const urlPagina = ruta => `${paginaSubida().replace(/[#/]+$/, '')}${ruta}`;
+  // Direcciones de los tres PDF de los estatutos (viven en la página de subida), o nada si no está configurada.
+  const enlacesEstatutos = () => (paginaSubida() ? { resumen: urlPagina('/resumen-estatutos-amagro-ag.pdf'), lectura: urlPagina('/estatutos-lectura-amagro-ag.pdf'), copiaNotarial: urlPagina('/estatutos-amagro-ag.pdf') } : {});
 
   async function enrutar({ metodo, url, cuerpo }) {
     const ruta = metodo + ' ' + url.split('?')[0];
@@ -1873,8 +1889,30 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       const registro = await buscarRegistro(consulta.get('clave'));
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
-      const enlaces = paginaSubida() ? { resumen: urlPagina('/resumen-estatutos-amagro-ag.pdf'), lectura: urlPagina('/estatutos-lectura-amagro-ag.pdf'), copiaNotarial: urlPagina('/estatutos-amagro-ag.pdf') } : {};
+      const enlaces = enlacesEstatutos();
       return ok({ ...bienvenida.correo(registro, enlaces), enlaces });
+    }
+
+    // Enlace único a la carta de bienvenida de esa persona: deja lista su carta (PDF con logo y su nombre) y crea el enlace.
+    // La página bienvenida.html (en la página de subida) la entrega con ese enlace. Vale 60 días y se puede abrir varias veces.
+    if (ruta === 'POST /api/enlace-bienvenida') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const registro = await buscarRegistro((a.cuerpo || {}).clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
+      if (!paginaSubida()) return fallo(400, 'Falta configurar la dirección de la página de subida (paginaSubida).');
+      await almacen.prepararBienvenida(registro.clave, await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos() }));
+      const e = await almacen.crearEnlaceBienvenida(registro.clave, 60);
+      return ok({ url: urlPagina(`/bienvenida.html#${e.token}`), vence_en: e.vence_en });
+    }
+    // Vista previa de esa misma carta en PDF (no deja nada guardado).
+    if (ruta === 'POST /api/carta-bienvenida') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const registro = await buscarRegistro((a.cuerpo || {}).clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
+      return { estado: 200, bytes: await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos() }), tipo: 'application/pdf',
+        cabeceras: { 'Content-Disposition': 'attachment; filename="' + bienvenida.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
     }
 
     // Thunderbird: solo existe en el computador (en la web no hay).
@@ -2122,7 +2160,51 @@ function crearPdf(lienzo, { imagen = null, titulo = '' } = {}) {
   return Buffer.concat(partes);
 }
 
-module.exports = { Lienzo, crearPdf, leerImagen, decodificarPng, medir, aWinAnsi };
+// Igual que crearPdf, pero con varias páginas (una lista de lienzos). La imagen (el logo) se comparte: cada página que la use la dibuja con /Im1.
+function crearPdfPaginas(lienzos, { imagen = null, titulo = '' } = {}) {
+  const partes = [], offsets = [];
+  let largo = 0;
+  const poner = x => { const b = Buffer.isBuffer(x) ? x : Buffer.from(x, 'latin1'); partes.push(b); largo += b.length; };
+  const objeto = (n, cuerpo) => { offsets[n] = largo; poner(`${n} 0 obj\n`); poner(cuerpo); poner('\nendobj\n'); };
+  const flujo = (dict, datos) => Buffer.concat([Buffer.from(`<< ${dict} /Length ${datos.length} >>\nstream\n`, 'latin1'), datos, Buffer.from('\nendstream', 'latin1')]);
+  const fuente = base => `<< /Type /Font /Subtype /Type1 /BaseFont /${base} /Encoding /WinAnsiEncoding >>`;
+
+  // Numeración: 1 catálogo, 2 páginas, 3-4 fuentes, 5 (y 6) imagen, luego cada página con su contenido, y al final la información.
+  const idImagen = 5, hayAlfa = !!(imagen && imagen.tipo !== 'jpeg' && imagen.alfa);
+  const primeraPagina = imagen ? (hayAlfa ? 7 : 6) : 5;
+  const idPagina = i => primeraPagina + 2 * i, idContenido = i => primeraPagina + 2 * i + 1;
+  const info = primeraPagina + 2 * lienzos.length;
+
+  poner('%PDF-1.4\n%âãÏÓ\n');
+  objeto(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  objeto(2, `<< /Type /Pages /Kids [${lienzos.map((_, i) => `${idPagina(i)} 0 R`).join(' ')}] /Count ${lienzos.length} >>`);
+  objeto(3, fuente('Helvetica'));
+  objeto(4, fuente('Helvetica-Bold'));
+  if (imagen) {
+    const base = `/Type /XObject /Subtype /Image /Width ${imagen.ancho} /Height ${imagen.alto} /BitsPerComponent 8`;
+    if (imagen.tipo === 'jpeg') {
+      objeto(idImagen, flujo(`${base} /ColorSpace ${imagen.componentes === 1 ? '/DeviceGray' : '/DeviceRGB'} /Filter /DCTDecode`, imagen.datos));
+    } else {
+      objeto(idImagen, flujo(`${base} /ColorSpace /DeviceRGB /Filter /FlateDecode${hayAlfa ? ' /SMask 6 0 R' : ''}`, zlib.deflateSync(imagen.rgb)));
+      if (hayAlfa) objeto(6, flujo(`${base} /ColorSpace /DeviceGray /Filter /FlateDecode`, zlib.deflateSync(imagen.alfa)));
+    }
+  }
+  lienzos.forEach((l, i) => {
+    objeto(idPagina(i), `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${l.ancho} ${l.alto}] `
+      + `/Resources << /Font << /F1 3 0 R /F2 4 0 R >>${imagen ? ` /XObject << /Im1 ${idImagen} 0 R >>` : ''} >> /Contents ${idContenido(i)} 0 R >>`);
+    objeto(idContenido(i), flujo('/Filter /FlateDecode', zlib.deflateSync(Buffer.from(l.ops.join('\n'), 'latin1'))));
+  });
+  objeto(info, `<< /Title ${cadenaPdf(titulo)} /Producer (AMAGRO AG) >>`);
+
+  const inicioXref = largo, total = info + 1;
+  let xref = `xref\n0 ${total}\n0000000000 65535 f \n`;
+  for (let n = 1; n < total; n++) xref += `${String(offsets[n]).padStart(10, '0')} 00000 n \n`;
+  poner(xref);
+  poner(`trailer\n<< /Size ${total} /Root 1 0 R /Info ${info} 0 R >>\nstartxref\n${inicioXref}\n%%EOF\n`);
+  return Buffer.concat(partes);
+}
+
+module.exports = { Lienzo, crearPdf, crearPdfPaginas, leerImagen, decodificarPng, medir, aWinAnsi };
 
 });
 
@@ -2412,16 +2494,98 @@ module.exports = { generar, correo, nombreArchivo, fechaLarga, PARRAFOS, ASUNTO 
 
 });
 
+definir("lib/redactor", function (module, exports, require, __dirname, Buffer) {
+// Redactor: escribe texto corrido en un PDF de tamaño carta y pasa a la página siguiente cuando se acaba el espacio.
+// Soporta negrita dentro del párrafo. Lo que va pegado en el texto (por ejemplo «aceptada» + «, pues») se dibuja pegado y no se
+// corta entre líneas. Sin dependencias de Node (corre igual en el navegador).
+const { Lienzo, medir } = require('./pdf');
+
+const t = (texto, b = false) => ({ t: texto, b });
+
+class Redactor {
+  constructor({ ancho = 612, alto = 792, margen = 85, arriba = 58, abajo = 60, tam = 11, interlinea = 14.5 } = {}) {
+    Object.assign(this, { ancho, alto, margen, arriba, abajo, tam, interlinea });
+    this.anchoUtil = ancho - 2 * margen;
+    this.paginas = [];
+    this.nueva();
+  }
+  nueva() {
+    this.lienzo = new Lienzo(this.ancho, this.alto);
+    this.paginas.push(this.lienzo);
+    this.y = this.arriba;
+  }
+  // Hace lugar para `alto` puntos; si no cabe, empieza otra página.
+  reservar(alto) { if (this.y + alto > this.alto - this.abajo) this.nueva(); }
+  espacio(alto) { this.y += alto; }
+
+  // Párrafo con negrita (lista de trozos { t, b }). `tam` opcional para texto más chico (por ejemplo, direcciones web).
+  parrafo(trozos, { despues = 10, tam = this.tam, sangria = 0 } = {}) {
+    const unidades = [];
+    let pegada = false; // ¿lo siguiente continúa la palabra anterior?
+    for (const x of trozos) {
+      for (const p of x.t.split(/(\s+)/)) {
+        if (!p) continue;
+        if (/^\s+$/.test(p)) { pegada = false; continue; }
+        const pieza = { w: p, b: x.b, ancho: medir(p, tam, x.b) };
+        if (pegada && unidades.length) unidades[unidades.length - 1].push(pieza); else unidades.push([pieza]);
+        pegada = true;
+      }
+    }
+    const espacio = medir(' ', tam), disponible = this.anchoUtil - sangria;
+    const lineas = [];
+    let linea = [], largo = 0;
+    for (const u of unidades) {
+      const ancho = u.reduce((n, p) => n + p.ancho, 0);
+      if (linea.length && largo + espacio + ancho > disponible) { lineas.push(linea); linea = []; largo = 0; }
+      largo += (linea.length ? espacio : 0) + ancho;
+      linea.push(u);
+    }
+    if (linea.length) lineas.push(linea);
+    const alto = tam / this.tam * this.interlinea;
+    // Una línea suelta no se deja sola al final ni al comienzo de una página: se reservan al menos dos.
+    this.reservar(alto * Math.min(lineas.length, 2));
+    for (const l of lineas) {
+      this.reservar(alto);
+      let x = this.margen + sangria;
+      for (const u of l) {
+        for (const p of u) { this.lienzo.texto(x, this.y + tam * 0.95, p.w, { negrita: p.b, tam }); x += p.ancho; }
+        x += espacio;
+      }
+      this.y += alto;
+    }
+    this.y += despues;
+  }
+  linea(texto, opciones = {}) { this.parrafo([t(texto, opciones.negrita)], { despues: 0, ...opciones }); }
+  // Dibuja una imagen (el logo) a la izquierda, sin salirse del máximo dado.
+  imagen(imagen, { maxAncho = 150, maxAlto = 82 } = {}) {
+    const escala = Math.min(maxAncho / imagen.ancho, maxAlto / imagen.alto);
+    const w = imagen.ancho * escala, h = imagen.alto * escala;
+    this.lienzo.imagen(this.margen, this.y, w, h);
+    this.y += h;
+  }
+}
+
+module.exports = { Redactor, t };
+
+});
+
 definir("lib/cartaBienvenida", function (module, exports, require, __dirname, Buffer) {
-// Correo de bienvenida a quien el Directorio aprobó: la carta (texto revisado por el Directorio) con los enlaces al resumen de los
-// estatutos y a los estatutos completos. Es corto a propósito: así entra completo en el enlace de Gmail. No se adjunta nada.
+// Carta de bienvenida a quien el Directorio aprobó. Tiene dos formas, con el mismo texto (revisado por el Directorio):
+//  - el PDF con logo y el nombre de la persona (varias páginas), que ella descarga desde un enlace único; y
+//  - un correo corto que le avisa y le da ese enlace, más los enlaces a los estatutos.
 //
 // PENDIENTE: la información de la cuota social y los datos para pagar. Se agregará cuando se defina la forma de pago
-// (por ejemplo, con Flow). Para sumarla basta con poner texto en SECCION_PAGO: se inserta bajo «Información importante».
+// (por ejemplo, con Flow). Para sumarla basta con poner texto en SECCION_PAGO: va en el PDF y en el correo.
 const { titulo } = require('./carta');
+const { crearPdfPaginas, leerImagen } = require('./pdf');
+const { Redactor, t } = require('./redactor');
+const { fechaLarga } = require('./cartaNoAceptacion');
+const { sinTildes } = require('./normalizar');
 
 const ASUNTO = '¡Bienvenida a AMAGRO AG!';
+const MARCA_CARTA = '[ENLACE_CARTA_BIENVENIDA]'; // en el texto del correo; se reemplaza por el enlace único al enviarlo
 const SECCION_PAGO = null; // ej.: 'Cuota social: ...\n\nDatos para el pago: ...'
+const CIUDAD = 'Santiago';
 
 const CARTA = [
   '¡Con mucha alegría te damos la más cordial bienvenida a AMAGRO A.G.!',
@@ -2431,10 +2595,9 @@ const CARTA = [
   'Estamos convencidas de que cuando una mujer crece, se fortalece su familia, progresa su comunidad y se construye un mejor futuro para Chile.',
   'En AMAGRO, cada socia aporta su experiencia, sus talentos y su visión. Queremos que encuentres aquí un espacio de encuentro, apoyo y oportunidades, donde juntas podamos generar un impacto real.',
 ];
-
-// En la carta original decía «Adjuntamos nuestros Estatutos y una carta resumen»; como el correo no lleva adjuntos, se cambió por enlaces.
-const ESTATUTOS_INTRO = 'Estatutos gremiales: te dejamos un resumen con sus principales disposiciones, derechos y obligaciones, y los Estatutos completos, para tu conocimiento y consulta:';
-
+const TITULO_INFO = 'Información importante para tu incorporación';
+// En la carta original decía «Adjuntamos nuestros Estatutos y una carta resumen»; como no se adjunta nada, se cambió por enlaces.
+const ESTATUTOS_INTRO = 'te dejamos un resumen con sus principales disposiciones, derechos y obligaciones, y los Estatutos completos, para tu conocimiento y consulta:';
 const DIRECTORIO = [
   'Presidenta: Maritrini Lapuente',
   'Vicepresidenta: Sandra Zolezzi',
@@ -2442,35 +2605,69 @@ const DIRECTORIO = [
   'Secretaria: Liliana Camelio',
   'Directora: María Eugenia Arévalo',
 ];
-
 const CIERRE = [
   'Para cualquier consulta, puedes escribirnos a socias@amagroag.cl.',
   'Nos llena de entusiasmo contar contigo. Te invitamos a participar activamente, compartir tus ideas y ser protagonista de este proyecto que construimos entre todas.',
 ];
 const FIRMA = ['Con mucho cariño,', '', 'Directorio AMAGRO A.G.', 'Asociación Gremial de Mujeres del Agro de Chile', '', 'AMAGRO, ¡MUJERES QUE AMAN EL AGRO!'];
 
-// enlaces: { resumen, lectura, copiaNotarial } (direcciones de los tres PDF de los estatutos)
-function correo(registro, enlaces = {}) {
-  const correoInvalido = !registro.correo || registro.alertas.some(a => /^Correo inválido/.test(a));
-  const lista = [
+const nombreDe = registro => titulo(registro.nombre) || 'socia';
+
+// Los tres enlaces de los estatutos, como líneas de texto. enlaces: { resumen, lectura, copiaNotarial }.
+function listaEstatutos(enlaces = {}) {
+  return [
     ...(enlaces.resumen ? [`• Resumen de los Estatutos: ${enlaces.resumen}`] : []),
     ...(enlaces.lectura ? [`• Estatutos completos (versión de lectura): ${enlaces.lectura}`] : []),
     ...(enlaces.copiaNotarial ? [`• Copia notarial (escaneada), que es el documento oficial: ${enlaces.copiaNotarial}`] : []),
   ];
-  const cuerpo = [
-    `Estimada ${titulo(registro.nombre) || 'socia'},`, '',
-    ...CARTA.flatMap(p => [p, '']),
-    'Información importante para tu incorporación', '',
-    ESTATUTOS_INTRO, ...lista, '',
-    ...(SECCION_PAGO ? [SECCION_PAGO, ''] : []),
-    'Nuestro Directorio', ...DIRECTORIO, '',
-    ...CIERRE.flatMap(p => [p, '']),
-    ...FIRMA,
-  ].join('\n');
-  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: ASUNTO, cuerpo, pagoIncluido: !!SECCION_PAGO };
 }
 
-module.exports = { correo, ASUNTO };
+// Correo corto: avisa, da el enlace a la carta (MARCA_CARTA) y los enlaces a los estatutos.
+function correo(registro, enlaces = {}) {
+  const correoInvalido = !registro.correo || registro.alertas.some(a => /^Correo inválido/.test(a));
+  const lista = listaEstatutos(enlaces);
+  const cuerpo = [
+    `Estimada ${nombreDe(registro)},`, '',
+    '¡Bienvenida a AMAGRO AG! Con mucha alegría te comunicamos que nuestro Directorio ha aprobado tu incorporación.', '',
+    'Aquí está tu carta de bienvenida, con más información para tu incorporación:', MARCA_CARTA, '',
+    ...(lista.length ? ['Estatutos gremiales: ' + ESTATUTOS_INTRO, ...lista, ''] : []),
+    ...(SECCION_PAGO ? [SECCION_PAGO, ''] : []),
+    CIERRE[0], '',
+    ...FIRMA,
+  ].join('\n');
+  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: ASUNTO, cuerpo, pagoIncluido: !!SECCION_PAGO, marca: MARCA_CARTA };
+}
+
+function nombreArchivo(nombre) {
+  const base = sinTildes(String(nombre || '')).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+  return `Carta_bienvenida_${titulo(base.replace(/_/g, ' ')).replace(/ /g, '_') || 'socia'}.pdf`;
+}
+
+// PDF de la carta completa, con logo y el nombre de la persona.
+function generar(registro, { ahora = new Date(), logo = null, enlaces = {} } = {}) {
+  const r = new Redactor();
+  let imagen = null;
+  if (logo) {
+    try { imagen = leerImagen(logo); r.imagen(imagen); r.espacio(26); } catch { imagen = null; } // un logo dañado no impide generar la carta
+  }
+  r.parrafo([t(`${CIUDAD}, ${fechaLarga(ahora)}`)], { despues: 14 });
+  r.parrafo([t(`Estimada ${nombreDe(registro)},`)], { despues: 14 });
+  CARTA.forEach((p, i) => r.parrafo([t(p, i === 0)], { despues: 13 }));
+  r.parrafo([t(TITULO_INFO, true)], { despues: 8 });
+  r.parrafo([t('Estatutos gremiales: ', true), t(ESTATUTOS_INTRO)], { despues: 6 });
+  for (const l of listaEstatutos(enlaces)) r.parrafo([t(l)], { despues: 4, tam: 9, sangria: 10 });
+  r.espacio(8);
+  if (SECCION_PAGO) for (const p of SECCION_PAGO.split(/\n\n+/)) r.parrafo([t(p)], { despues: 10 });
+  r.reservar(120); // el título y la lista del Directorio no se separan entre páginas
+  r.parrafo([t('Nuestro Directorio', true)], { despues: 4 });
+  DIRECTORIO.forEach(l => r.parrafo([t(l)], { despues: 2 }));
+  r.espacio(12);
+  CIERRE.forEach(p => r.parrafo([t(p)], { despues: 13 }));
+  FIRMA.forEach((l, i) => (l ? r.parrafo([t(l, i === FIRMA.length - 1)], { despues: 0 }) : r.espacio(14.5)));
+  return crearPdfPaginas(r.paginas, { imagen, titulo: 'Carta de bienvenida - AMAGRO AG' });
+}
+
+module.exports = { correo, generar, nombreArchivo, listaEstatutos, ASUNTO, MARCA_CARTA };
 
 });
 

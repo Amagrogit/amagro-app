@@ -569,9 +569,9 @@ async function deshacerEdiciones() {
 }
 
 // ---- Carta de bienvenida ----
-// Se abre solo para postulaciones con el paso «Aprobada». Un solo correo: carta, resumen de estatutos y enlaces.
-const LARGO_MAX_URL_GMAIL = 6500; // si el enlace de Gmail fuera más largo, el mensaje se copia al portapapeles y se pega a mano
-let bvActual = null; // { d, correo }
+// Se abre solo para postulaciones con el paso «Aprobada». La carta completa es un PDF con logo y el nombre de la persona, que ella
+// descarga desde un enlace único; el correo es corto y lleva ese enlace (el marcador se reemplaza al abrir Gmail) y los de los estatutos.
+let bvActual = null; // { d, correo, url, nombre, enlace }
 function estadoBv(texto, error) {
   const el = $('bvEstado');
   el.textContent = texto || '';
@@ -584,14 +584,20 @@ function configurarRegistroBv() {
   $('bvYaEnviada').hidden = !e;
   if (e) $('bvYaEnviada').textContent = '✓ Bienvenida anotada como enviada el ' + fechaCL(e.fecha) + '.';
 }
-function cerrarModalBienvenida() { $('modalBienvenida').hidden = true; bvActual = null; }
+function cerrarModalBienvenida() {
+  if (bvActual && bvActual.url) URL.revokeObjectURL(bvActual.url);
+  $('vistaBv').src = 'about:blank';
+  $('modalBienvenida').hidden = true;
+  bvActual = null;
+}
 async function abrirModalBienvenida() {
   const d = datos.find(x => x.fila === seleccion);
   if (!d) return;
-  const actual = bvActual = { d, correo: null };
+  const actual = bvActual = { d, correo: null, url: null, nombre: null, enlace: null };
   $('bvAvisos').innerHTML = '';
   $('bvPara').textContent = '—'; $('bvAsunto').textContent = ''; $('bvCuerpo').value = ''; $('bvSinCorreo').hidden = true;
-  estadoBv('Preparando el mensaje…');
+  $('vistaBv').src = 'about:blank';
+  estadoBv('Preparando la carta…');
   configurarRegistroBv();
   $('modalBienvenida').hidden = false;
   try {
@@ -602,22 +608,54 @@ async function abrirModalBienvenida() {
     actual.correo = j;
     $('bvPara').textContent = j.destinatario || '—'; $('bvAsunto').textContent = j.asunto; $('bvCuerpo').value = j.cuerpo; $('bvSinCorreo').hidden = !j.correoInvalido;
     $('bvAvisos').innerHTML = j.pagoIncluido ? '' : '<p class="sub" style="color:var(--alerta);margin:0 0 6px"><b>Esta carta todavía no incluye la cuota social ni los datos para pagar</b> (se agregarán cuando se defina la forma de pago). Si la envías ahora, esa información habrá que darla aparte.</p>';
+    const p = await fetch('/api/carta-bienvenida', { method: 'POST', body: JSON.stringify({ clave: d.clave }) });
+    if (!p.ok) throw new Error(((await p.json().catch(() => ({}))).error) || 'No se pudo generar la carta en PDF.');
+    actual.nombre = ((p.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'Carta_bienvenida.pdf';
+    const blob = await p.blob();
+    if (bvActual !== actual) return;
+    actual.url = URL.createObjectURL(blob);
+    $('vistaBv').src = actual.url + '#toolbar=0&navpanes=0';
+    $('bvNuevaPestana').href = actual.url;
     estadoBv('');
   } catch (e) { if (bvActual === actual) estadoBv(e.message, true); }
 }
 $('modalBienvenida').addEventListener('click', e => { if (e.target === $('modalBienvenida') || e.target.closest('#cerrarBv')) cerrarModalBienvenida(); });
-$('bvCopiar').addEventListener('click', async () => estadoBv((await copiarTexto($('bvCuerpo').value)) ? 'Mensaje copiado.' : 'No se pudo copiar: selecciónalo y presiona Ctrl+C.', false));
+$('bvPdf').addEventListener('click', () => {
+  if (!bvActual || !bvActual.url) return estadoBv('El PDF aún se está generando: espera un momento.', true);
+  const a = document.createElement('a'); a.href = bvActual.url; a.download = bvActual.nombre; a.click();
+});
+// Crea el enlace único a la carta (una sola vez por ventana: deja lista la carta y revoca el anterior) y lo pone en el texto.
+async function cuerpoFinalBv() {
+  const actual = bvActual;
+  const texto = $('bvCuerpo').value;
+  const marca = actual.correo.marca;
+  if (!texto.includes(marca)) return texto;
+  if (!actual.enlace) {
+    const r = await post('/api/enlace-bienvenida', { clave: actual.d.clave });
+    if (r.error) { estadoBv('No se pudo crear el enlace a la carta: ' + r.error, true); return null; }
+    actual.enlace = r;
+  }
+  return texto.split(marca).join(actual.enlace.url);
+}
+$('bvCopiar').addEventListener('click', async () => {
+  const actual = bvActual;
+  if (!actual || !actual.correo) return;
+  estadoBv('Preparando el mensaje…');
+  const cuerpo = await cuerpoFinalBv();
+  if (cuerpo === null || bvActual !== actual) return;
+  estadoBv((await copiarTexto(cuerpo)) ? 'Mensaje copiado, con el enlace a la carta.' : 'No se pudo copiar: selecciónalo y presiona Ctrl+C.', false);
+});
 $('bvGmail').addEventListener('click', async () => {
   const actual = bvActual;
   if (!actual || !actual.correo) return estadoBv('El mensaje aún se está preparando: espera un momento.', true);
-  const texto = $('bvCuerpo').value;
-  const completo = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo: texto, cuenta: correoEnvio });
-  const cabe = completo.length <= LARGO_MAX_URL_GMAIL;
-  const copiado = await copiarTexto(texto); // el mensaje queda en el portapapeles, por si Gmail no alcanza a recibirlo completo
-  const url = cabe ? completo : urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo: '(Pega aquí el mensaje: ya está copiado, usa Ctrl+V)', cuenta: correoEnvio });
-  const ventana = window.open(url, '_blank');
+  // La ventana se abre al instante, dentro del clic, para que el navegador no la bloquee, y se completa cuando el enlace está creado.
+  const ventana = window.open('', '_blank');
   if (ventana) ventana.opener = null;
+  estadoBv('Preparando el correo…');
+  const cuerpo = await cuerpoFinalBv();
+  if (cuerpo === null || bvActual !== actual) { if (ventana) ventana.close(); return; }
   if (!ventana) return estadoBv('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
+  ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio });
   let anotada = false;
   if (!actual.d.pasos.bienvenida) {
     const r = await guardarPaso('bienvenida', true, { fecha: hoyLocalISO(), nota: 'correo abierto desde la app' });
@@ -625,7 +663,7 @@ $('bvGmail').addEventListener('click', async () => {
   } else anotada = true;
   if (bvActual !== actual) return;
   configurarRegistroBv();
-  estadoBv('✓ Se abrió Gmail en otra pestaña' + (cabe ? ' con el mensaje listo' : ' con el destinatario y el asunto. El mensaje es largo: ' + (copiado ? 'ya está copiado; en Gmail, borra la línea de aviso y pega con Ctrl+V' : 'pulsa «Copiar mensaje» y pégalo en Gmail')) + '. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + ').' : '.') + (anotada ? ' Quedó anotado como enviado en la ficha.' : ''));
+  estadoBv('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + (actual.correo.destinatario || 'la socia') + '. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + ').' : '.') + (anotada ? ' Quedó anotado como enviado en la ficha.' : ''));
 });
 $('bvDeshacer').addEventListener('click', async () => {
   const actual = bvActual;
