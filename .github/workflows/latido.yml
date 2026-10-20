@@ -1,0 +1,36 @@
+# Latido: una vez al día hace una consulta mínima al proyecto de Supabase, para que no lo pause por falta de actividad
+# (el plan gratuito pausa los proyectos que pasan una semana sin uso). Es un parche: la solución definitiva es el plan Pro.
+#
+# La consulta es la acción pública «validar» de la función «documentos» con un código falso: la función consulta la base de datos,
+# contesta que el enlace no es válido y no deja ningún registro. Solo usa la dirección del proyecto y la clave PÚBLICA
+# (las mismas que ya están en la página de la aplicación); no hay claves secretas aquí.
+#
+# Si la consulta falla (el proyecto está pausado o caído), esta tarea termina en error y GitHub avisa por correo al dueño del repositorio.
+name: Latido
+
+on:
+  schedule:
+    - cron: '17 13 * * *'   # todos los días, 13:17 UTC (10:17 en Chile en horario de verano)
+  workflow_dispatch:        # permite ejecutarla a mano desde la pestaña Actions
+
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consulta mínima al proyecto
+        env:
+          URL: https://qmargdrjpzswpjqxvsin.supabase.co
+          CLAVE: sb_publishable_NEJ4pi7Aq_9qOCLlJ4BegA_DCV6ZX5a
+        run: |
+          for intento in 1 2 3; do
+            codigo=$(curl -s -m 30 -o respuesta.txt -w '%{http_code}' -X POST "$URL/functions/v1/documentos" \
+              -H 'Content-Type: application/json' -H "apikey: $CLAVE" \
+              -d '{"accion":"validar","token":"latido-comprobacion-0000000000"}' || echo 000)
+            echo "Intento $intento: HTTP $codigo"
+            cat respuesta.txt; echo
+            # 404 con este mensaje es lo esperado: la función corrió y consultó la base de datos
+            if [ "$codigo" = "404" ] && grep -q 'no es válido' respuesta.txt; then echo "Latido correcto."; exit 0; fi
+            sleep 20
+          done
+          echo "El proyecto no respondió como se esperaba: puede estar pausado."
+          exit 1
