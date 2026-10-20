@@ -34,12 +34,17 @@ function cargar(resp, conservar) {
     ? '<div class="aviso">No se encontraron estas columnas en el archivo: <b>' + esc(resp.columnasNoEncontradas.join(', ')) + '</b>. Revisa los encabezados.</div>' : '';
   const regs = [...new Set(datos.map(d => d.region).filter(Boolean))].sort();
   $('region').innerHTML = '<option value="">Todas las regiones</option>' + regs.map(r => `<option>${esc(r)}</option>`).join('');
-  // Cargos: opciones del filtro (las que hay en uso) y sugerencias para escribir uno nuevo.
+  // Cargos: el filtro muestra siempre los cargos de la lista (aunque nadie lo tenga aún), los que se hayan escrito, y las delegadas por región.
   const filtroCargoPrevio = $('filtroCargo').value;
-  const enUso = [...new Set(datos.flatMap(d => d.cargos))].filter(e => !/falta la región$/.test(e)).sort((a, b) => a.localeCompare(b, 'es'));
-  $('filtroCargo').innerHTML = '<option value="">Todos los cargos</option><option value="*">Con algún cargo</option><option value="!region">Delegadas sin región (por completar)</option>' + enUso.map(e => '<option>' + esc(e) + '</option>').join('');
+  const extra = [...new Set(datos.flatMap(d => d.cargosDetalle.map(c => c.cargo)))].filter(c => !CARGOS_SUGERIDOS.includes(c)).sort((a, b) => a.localeCompare(b, 'es'));
+  const porRegion = [...new Set(datos.flatMap(d => d.cargosDetalle.filter(c => c.cargo === DELEGADA && c.region).map(c => c.cargo + ' · ' + c.region)))].sort((a, b) => a.localeCompare(b, 'es'));
+  const cuantas = f => datos.filter(d => !d.duplicadaDe && !d.inactiva && f(d)).length;
+  $('filtroCargo').innerHTML = '<option value="">Todos los cargos</option><option value="*">Con algún cargo</option>'
+    + '<optgroup label="Por cargo">' + [...CARGOS_SUGERIDOS, ...extra].map(c => '<option value="c:' + esc(c) + '">' + esc(c) + ' (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === c)) + ')</option>').join('') + '</optgroup>'
+    + '<optgroup label="Delegadas">' + '<option value="!region">Delegadas sin región (por completar) (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === DELEGADA && !x.region)) + ')</option>'
+    + porRegion.map(e => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join('') + '</optgroup>';
   if ([...$('filtroCargo').options].some(o => o.value === filtroCargoPrevio)) $('filtroCargo').value = filtroCargoPrevio;
-  $('listaCargos').innerHTML = [...new Set([...CARGOS_SUGERIDOS, ...datos.flatMap(d => d.cargosDetalle.map(c => c.cargo))])].map(c => '<option value="' + esc(c) + '"></option>').join('');
+  window.cargosParaElegir = [...CARGOS_SUGERIDOS, ...extra]; // se usa en la ficha, al agregar un cargo
   const cuenta = {};
   datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
   $('etapa').innerHTML = '<option value="">Todas las etapas</option>' +
@@ -68,7 +73,7 @@ function pintar() {
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'fundadoras' ? d.fundadora : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
-    (!fc || (fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : d.cargos.includes(fc))) &&
+    (!fc || (fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
   ultimosVisibles = vis;
   // Orden: las filas sin dato quedan siempre al final, sea cual sea la dirección.
@@ -289,11 +294,12 @@ function bloqueCargos(d) {
     <div class="cargos-edicion" style="margin-top:8px">
       <label style="display:block;margin-bottom:6px"><input type="checkbox" id="chkFundadora"${d.fundadora ? ' checked' : ''}> Socia fundadora <span class="sub">(condición que no cambia)</span></label>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <input id="cargoNuevo" list="listaCargos" placeholder="Agregar un cargo…" maxlength="60" autocomplete="off" style="flex:1 1 160px">
+        <select id="cargoElegido" aria-label="Cargo"><option value="">Elige un cargo…</option>${(window.cargosParaElegir || CARGOS_SUGERIDOS).map(c => `<option>${esc(c)}</option>`).join('')}<option value="__otro">Otro cargo (escribirlo)…</option></select>
+        <input id="cargoNuevo" placeholder="Escribe el cargo" maxlength="60" autocomplete="off" hidden style="flex:1 1 160px">
         <select id="cargoRegion" hidden><option value="">Región…</option>${regiones.map(r => `<option>${esc(r)}</option>`).join('')}</select>
         <button class="btn-peq" id="agregarCargo">Agregar</button>
       </div>
-      <div class="sub" style="margin-top:4px">Elige uno de la lista o escribe otro. La delegada regional lleva su región; puede haber varias por región.</div>
+      <div class="sub" style="margin-top:4px">Elige un cargo de la lista, o «Otro» para escribir uno nuevo. La delegada regional lleva su región; puede haber varias por región.</div>
     </div>
   </section>`;
 }
@@ -607,11 +613,15 @@ async function guardarCargos(cuerpo, mensaje) {
   mostrar(mensaje);
 }
 const cargosActuales = d => d.cargosDetalle.map(c => ({ cargo: c.cargo, region: c.region }));
-$('ficha').addEventListener('input', e => {
-  if (e.target.id !== 'cargoNuevo') return;
-  $('cargoRegion').hidden = sinTil(e.target.value) !== sinTil(DELEGADA); // solo la delegada regional lleva región
-});
+// El cargo que se va a agregar: el elegido de la lista, o el que se escribió si se eligió «Otro».
+const cargoPorAgregar = () => ($('cargoElegido').value === '__otro' ? $('cargoNuevo').value : $('cargoElegido').value).replace(/\s+/g, ' ').trim();
+const ajustarCamposCargo = () => {
+  $('cargoNuevo').hidden = $('cargoElegido').value !== '__otro';
+  $('cargoRegion').hidden = sinTil(cargoPorAgregar()) !== sinTil(DELEGADA); // solo la delegada regional lleva región
+};
+$('ficha').addEventListener('input', e => { if (e.target.id === 'cargoNuevo') ajustarCamposCargo(); });
 $('ficha').addEventListener('change', e => {
+  if (e.target.id === 'cargoElegido') { ajustarCamposCargo(); if (e.target.value === '__otro') $('cargoNuevo').focus(); return; }
   if (e.target.id !== 'chkFundadora') return;
   const d = datos.find(x => x.fila === seleccion);
   if (d) guardarCargos({ fundadora: e.target.checked }, e.target.checked ? 'Marcada como socia fundadora.' : 'Se quitó la condición de socia fundadora.');
@@ -626,8 +636,8 @@ $('ficha').addEventListener('click', e => {
     return guardarCargos({ cargos: cargosActuales(d).filter((_, k) => k !== i) }, 'Cargo quitado.');
   }
   if (e.target.closest('#agregarCargo')) {
-    const cargo = $('cargoNuevo').value.replace(/\s+/g, ' ').trim();
-    if (cargo.length < 3) return mostrar('Escribe el cargo (al menos 3 letras) o elígelo de la lista.', true);
+    const cargo = cargoPorAgregar();
+    if (cargo.length < 3) return mostrar('Elige un cargo de la lista, o escribe uno nuevo (al menos 3 letras).', true);
     const esDelegada = sinTil(cargo) === sinTil(DELEGADA);
     const region = esDelegada ? $('cargoRegion').value : '';
     if (esDelegada && !region) return mostrar('Elige la región de la delegada.', true);
