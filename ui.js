@@ -11,6 +11,8 @@ const fechaCL = iso => iso ? iso.split('-').reverse().join('-') : '';
 const pagoTexto = d => [d.ingreso != null ? dinero(d.ingreso) : '', d.modalidad].filter(Boolean).join(' · ');
 
 let regiones = [];
+const DELEGADA = 'Delegada regional';
+const CARGOS_SUGERIDOS = ['Presidenta', 'Vicepresidenta', 'Secretaria', 'Tesorera', 'Directora', DELEGADA];
 let editando = false;
 let orden = { campo: null, dir: 0 }; // dir: 1 ascendente, -1 descendente, 0 sin orden (el de la planilla)
 const MODALIDADES = ['', 'MENSUAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'];
@@ -32,6 +34,12 @@ function cargar(resp, conservar) {
     ? '<div class="aviso">No se encontraron estas columnas en el archivo: <b>' + esc(resp.columnasNoEncontradas.join(', ')) + '</b>. Revisa los encabezados.</div>' : '';
   const regs = [...new Set(datos.map(d => d.region).filter(Boolean))].sort();
   $('region').innerHTML = '<option value="">Todas las regiones</option>' + regs.map(r => `<option>${esc(r)}</option>`).join('');
+  // Cargos: opciones del filtro (las que hay en uso) y sugerencias para escribir uno nuevo.
+  const filtroCargoPrevio = $('filtroCargo').value;
+  const enUso = [...new Set(datos.flatMap(d => d.cargos))].filter(e => !/falta la región$/.test(e)).sort((a, b) => a.localeCompare(b, 'es'));
+  $('filtroCargo').innerHTML = '<option value="">Todos los cargos</option><option value="*">Con algún cargo</option><option value="!region">Delegadas sin región (por completar)</option>' + enUso.map(e => '<option>' + esc(e) + '</option>').join('');
+  if ([...$('filtroCargo').options].some(o => o.value === filtroCargoPrevio)) $('filtroCargo').value = filtroCargoPrevio;
+  $('listaCargos').innerHTML = [...new Set([...CARGOS_SUGERIDOS, ...datos.flatMap(d => d.cargosDetalle.map(c => c.cargo))])].map(c => '<option value="' + esc(c) + '"></option>').join('');
   const cuenta = {};
   datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
   $('etapa').innerHTML = '<option value="">Todas las etapas</option>' +
@@ -50,6 +58,7 @@ function cargar(resp, conservar) {
 let ultimosVisibles = [];
 const visiblesActuales = () => ultimosVisibles;
 function pintar() {
+  const fc = $('filtroCargo').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
@@ -57,8 +66,9 @@ function pintar() {
   const vis = datos.filter(d =>
     (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo].join(' ').toLowerCase().includes(q)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
-    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'fundadoras' ? d.fundadora : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
+    (!fc || (fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : d.cargos.includes(fc))) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
   ultimosVisibles = vis;
   // Orden: las filas sin dato quedan siempre al final, sea cual sea la dirección.
@@ -91,7 +101,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.cargos.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip mal" title="${esc(d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>` : '<span class="chip ok">OK</span>'}</td>
@@ -213,7 +223,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
     <div class="cab">
       <div>
         <h2>${esc(d.nombre) || '(sin nombre)'}</h2>
-        <span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.cargos.map(c => `<span class="chip">${esc(c)}</span>`).join('')}
+        <span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.fundadora ? '<span class="chip fund">Socia fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}
         <div class="sub">Fila ${d.fila} de la planilla · postuló el ${d.postulacion ? esc(fechaCL(d.postulacion.slice(0, 10)) + (d.postulacion.length > 10 ? ' a las ' + d.postulacion.slice(11, 16) : '')) : (esc(d.marca) || '—')}</div>
       </div>
       <div class="cab-botones">
@@ -238,6 +248,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
         <span class="chip ${claseEtapa(o.etapa)}">${esc(o.etapa)}</span>
         <div class="sub">${esc(o.marca) || 'sin fecha'} · ${esc(o.nombre)}</div></div>`).join('')}
     </section>` : ''}
+    ${editando ? '' : bloqueCargos(d)}
     ${secciones().map(s => `<section><h3>${s.titulo}</h3><dl>
       ${s.campos.map(c => filaCampo(d, c)).join('')}
       ${s.titulo === 'Gestión' ? `<dt>Texto original</dt><dd>${dato(d.gestion)}</dd>` : ''}
@@ -268,6 +279,23 @@ function avisosCarta(d) {
     /^RUT inválido/.test(a) ? ['RUT'] : /^Teléfono/.test(a) ? ['teléfono'] : /^(Región no|Marcó más de una región)/.test(a) ? ['región'] : /^Correo inválido/.test(a) ? ['correo'] : []))];
   return (dudosos.length ? `<p class="sub" style="color:var(--alerta);margin:0 0 6px">Revisa antes de enviarla: ${esc(dudosos.join(', '))} ${dudosos.length > 1 ? 'tienen' : 'tiene'} alertas y saldrían tal como están en la ficha.</p>` : '')
     + (faltan.length ? `<p class="sub" style="margin:0 0 6px">Faltan datos (quedarán en blanco para escribirlos a mano): ${esc(faltan.join(', '))}.</p>` : '');
+}
+
+// Cargos de hoy (sin historial) y condición de socia fundadora. Quien puede editar agrega o quita cargos aquí mismo; la directiva solo los ve.
+function bloqueCargos(d) {
+  const chips = d.cargosDetalle.map((c, i) => `<span class="chip${/falta la región$/.test(d.cargos[i]) ? ' mal' : ''}">${esc(d.cargos[i])}<button class="quitar-cargo cargos-edicion" data-quitar-cargo="${i}" title="Quitar este cargo" aria-label="Quitar ${esc(d.cargos[i])}">✕</button></span>`).join('');
+  return `<section><h3>Cargos y condición</h3>
+    <div>${d.fundadora ? '<span class="chip fund">Socia fundadora</span>' : ''}${chips || (d.fundadora ? '' : NADA)}</div>
+    <div class="cargos-edicion" style="margin-top:8px">
+      <label style="display:block;margin-bottom:6px"><input type="checkbox" id="chkFundadora"${d.fundadora ? ' checked' : ''}> Socia fundadora <span class="sub">(condición que no cambia)</span></label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="cargoNuevo" list="listaCargos" placeholder="Agregar un cargo…" maxlength="60" autocomplete="off" style="flex:1 1 160px">
+        <select id="cargoRegion" hidden><option value="">Región…</option>${regiones.map(r => `<option>${esc(r)}</option>`).join('')}</select>
+        <button class="btn-peq" id="agregarCargo">Agregar</button>
+      </div>
+      <div class="sub" style="margin-top:4px">Elige uno de la lista o escribe otro. La delegada regional lleva su región; puede haber varias por región.</div>
+    </div>
+  </section>`;
 }
 
 function bloqueCarta(d) {
@@ -567,6 +595,45 @@ async function deshacerEdiciones() {
   cargar(r, true);
   mostrar('Se restauraron los datos de la planilla.');
 }
+
+// ---- Cargos y condición de socia fundadora ----
+const sinTil = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+async function guardarCargos(cuerpo, mensaje) {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d) return;
+  const r = await post('/api/cargos', { clave: d.clave, ...cuerpo });
+  if (r.error) { mostrar(r.error, true); abrirFicha(seleccion, false, true); return; } // se vuelve a dibujar la ficha con lo que hay guardado
+  cargar(r, true);
+  mostrar(mensaje);
+}
+const cargosActuales = d => d.cargosDetalle.map(c => ({ cargo: c.cargo, region: c.region }));
+$('ficha').addEventListener('input', e => {
+  if (e.target.id !== 'cargoNuevo') return;
+  $('cargoRegion').hidden = sinTil(e.target.value) !== sinTil(DELEGADA); // solo la delegada regional lleva región
+});
+$('ficha').addEventListener('change', e => {
+  if (e.target.id !== 'chkFundadora') return;
+  const d = datos.find(x => x.fila === seleccion);
+  if (d) guardarCargos({ fundadora: e.target.checked }, e.target.checked ? 'Marcada como socia fundadora.' : 'Se quitó la condición de socia fundadora.');
+});
+$('ficha').addEventListener('click', e => {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d) return;
+  const quitar = e.target.closest('[data-quitar-cargo]');
+  if (quitar) {
+    const i = Number(quitar.dataset.quitarCargo);
+    if (!confirm('¿Quitar el cargo «' + d.cargos[i] + '» de ' + d.nombre + '?')) return;
+    return guardarCargos({ cargos: cargosActuales(d).filter((_, k) => k !== i) }, 'Cargo quitado.');
+  }
+  if (e.target.closest('#agregarCargo')) {
+    const cargo = $('cargoNuevo').value.replace(/\s+/g, ' ').trim();
+    if (cargo.length < 3) return mostrar('Escribe el cargo (al menos 3 letras) o elígelo de la lista.', true);
+    const esDelegada = sinTil(cargo) === sinTil(DELEGADA);
+    const region = esDelegada ? $('cargoRegion').value : '';
+    if (esDelegada && !region) return mostrar('Elige la región de la delegada.', true);
+    guardarCargos({ cargos: [...cargosActuales(d), { cargo, region }] }, 'Cargo agregado.');
+  }
+});
 
 // ---- Carta de bienvenida ----
 // Se abre solo para postulaciones con el paso «Aprobada». La carta completa es un PDF con logo y el nombre de la persona, que ella
@@ -993,7 +1060,7 @@ document.addEventListener('keydown', e => {
   if (editando) abrirFicha(seleccion); else cerrarFicha();
 });
 
-['buscar', 'filtro', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
+['buscar', 'filtro', 'filtroCargo', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
 
 // Orden por columna. Cada clic en el mismo encabezado recorre: primera dirección -> la opuesta -> sin orden.
 // La fecha parte con las más recientes arriba; el nombre, de la A a la Z.
@@ -1172,8 +1239,8 @@ $('exportar').addEventListener('click', () => {
   // Una columna por paso de admisión, con la fecha en que se hizo (vacía si está pendiente), y la nota si la hay.
   const columnasPasos = pasosDef.flatMap(p => ['paso_' + p.id, 'nota_' + p.id]);
   const valoresPasos = d => pasosDef.flatMap(p => { const e = d.pasos[p.id]; return [e ? e.fecha : '', e ? e.nota : '']; });
-  const filas = [[...cols, ...columnasPasos, 'cargos', 'alertas'].map(celdaCsv),
-    ...datos.map(d => [...cols.map(c => d[c]), ...valoresPasos(d), d.cargos.join(' | '), d.alertas.join(' | ')].map(celdaCsv))];
+  const filas = [[...cols, ...columnasPasos, 'cargos', 'fundadora', 'alertas'].map(celdaCsv),
+    ...datos.map(d => [...cols.map(c => d[c]), ...valoresPasos(d), d.cargos.join(' | '), d.fundadora ? 'sí' : '', d.alertas.join(' | ')].map(celdaCsv))];
   const csv = filas.map(f => f.join(SEP)).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
@@ -1669,10 +1736,16 @@ function textoValor(v) {
   if (typeof v === 'object') return v.fecha ? fechaCL(v.fecha) + (v.nota ? ' — ' + v.nota : '') : JSON.stringify(v);
   return String(v);
 }
+// Texto de los cargos guardados (JSON) para el historial.
+function cargosTexto(json) {
+  try { return (JSON.parse(json) || []).map(c => c.cargo + (c.region ? ' · ' + c.region : '')).join(', '); } catch { return ''; }
+}
 function lineaHistorial(h, conNombre) {
   const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
   const etiquetaPaso = id => (pasosDef.find(p => p.id === id) || {}).etiqueta || id;
   const cambios = Object.entries(h.detalle || {}).map(([k, v]) => {
+    if (k === 'fundadora') return v.despues === 'si' ? 'la marcó como socia fundadora' : 'quitó la condición de socia fundadora';
+    if (k === 'cargos') return 'cambió los cargos: ' + (cargosTexto(v.antes) || 'sin cargos') + ' → ' + (cargosTexto(v.despues) || 'sin cargos');
     if (k === 'inactiva') return v.despues ? 'la marcó como no activa' : 'la volvió a activa';
     if (k === 'duplicada') return v.despues ? 'la marcó como duplicada de otra postulación' : 'quitó la marca de duplicada';
     if (h.accion === 'paso') return v.despues ? 'marcó «' + etiquetaPaso(k) + '» (' + textoValor(v.despues) + ')' : 'desmarcó «' + etiquetaPaso(k) + '»';

@@ -359,11 +359,73 @@ module.exports = {
 
 });
 
+definir("lib/cargos", function (module, exports, require, __dirname, Buffer) {
+// Cargos y condición de las socias.
+//  - «Socia fundadora» es una CONDICIÓN que no cambia: no es un cargo. Sale del texto de «Gestión» de la planilla y se puede corregir a mano.
+//  - Los cargos son los de HOY (sin historial de períodos): Presidenta, Vicepresidenta, Secretaria, Tesorera, Directora y Delegada regional
+//    (esta lleva la región; puede haber varias por región). Se pueden escribir cargos nuevos: la lista de abajo solo los sugiere.
+// Los cargos de una socia se guardan en su ficha como texto JSON (campo «cargos»); si ese campo no existe todavía, se usan los que dice la planilla.
+const { REGIONES } = require('./normalizar');
+const N = require('./normalizar');
+
+const DELEGADA = 'Delegada regional';
+const CARGOS_SUGERIDOS = ['Presidenta', 'Vicepresidenta', 'Secretaria', 'Tesorera', 'Directora', DELEGADA];
+const MAX_CARGOS = 10;
+
+// Lo que dice la planilla en «Gestión». «Directora» NO se toma de ahí: esas etiquetas eran del Directorio antiguo.
+function delPlanilla(texto) {
+  const t = N.sinTildes(String(texto || ''));
+  const delegada = t.includes('DELEGADA') && !/RENUNCIA A DELEGADA/.test(t);
+  return { fundadora: t.includes('FUNDADORA'), cargos: delegada ? [{ cargo: DELEGADA, region: '' }] : [] };
+}
+
+// Lee el texto guardado en la ficha. Cualquier cosa rara se ignora (lista vacía).
+function leer(texto) {
+  try {
+    const l = JSON.parse(texto);
+    if (!Array.isArray(l)) return [];
+    return l.filter(c => c && typeof c.cargo === 'string' && c.cargo.trim()).map(c => ({ cargo: c.cargo.trim(), region: typeof c.region === 'string' ? c.region : '' }));
+  } catch { return []; }
+}
+
+const esDelegada = c => N.sinTildes(c).toLowerCase() === N.sinTildes(DELEGADA).toLowerCase();
+
+// Valida la lista que llega de la pantalla. Devuelve { limpios } (la lista ya ordenada y sin repetidos) o { error }.
+function validar(lista) {
+  if (!Array.isArray(lista)) return { error: 'Los cargos no son válidos.' };
+  if (lista.length > MAX_CARGOS) return { error: `Una socia puede tener hasta ${MAX_CARGOS} cargos.` };
+  const limpios = [], vistos = new Set();
+  for (const c of lista) {
+    if (!c || typeof c.cargo !== 'string') return { error: 'Los cargos no son válidos.' };
+    let cargo = c.cargo.replace(/\s+/g, ' ').trim();
+    if (cargo.length < 3 || cargo.length > 60) return { error: 'El nombre del cargo debe tener entre 3 y 60 letras.' };
+    if (esDelegada(cargo)) cargo = DELEGADA; // siempre con el mismo nombre
+    let region = '';
+    if (cargo === DELEGADA) {
+      region = typeof c.region === 'string' ? c.region.trim() : '';
+      if (region && !REGIONES.includes(region)) return { error: 'La región de la delegada no es válida.' };
+    } else if (c.region) return { error: `El cargo «${cargo}» no lleva región.` };
+    const clave = N.sinTildes(cargo).toLowerCase() + '|' + region;
+    if (vistos.has(clave)) return { error: `El cargo «${cargo}»${region ? ' de ' + region : ''} está repetido.` };
+    vistos.add(clave);
+    limpios.push({ cargo, region });
+  }
+  return { limpios };
+}
+
+// «Delegada regional · MAULE», o «Delegada regional · falta la región».
+const etiqueta = c => (c.cargo === DELEGADA ? `${c.cargo} · ${c.region || 'falta la región'}` : c.cargo);
+
+module.exports = { DELEGADA, CARGOS_SUGERIDOS, MAX_CARGOS, delPlanilla, leer, validar, etiqueta };
+
+});
+
 definir("lib/procesar", function (module, exports, require, __dirname, Buffer) {
 const { parseCSV } = require('./csv');
 const N = require('./normalizar');
 const E = require('./etapas');
 const P = require('./pasos');
+const C = require('./cargos');
 
 // Cada campo se detecta por palabras clave en el encabezado, porque la planilla real
 // puede tener mayúsculas, tildes o texto extra.
@@ -419,7 +481,7 @@ function mapearColumnas(encabezados) {
 // solo tiene texto libre en "Gestión".
 const EDITABLES = ['nombre', 'rut', 'correo', 'nacimiento', 'telefono', 'region', 'comuna', 'direccion',
   'profesion', 'situacion', 'empresa', 'origen', 'resultado', 'modalidad', 'ingreso', 'citacion',
-  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva'];
+  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva', 'fundadora', 'cargos'];
 
 // La clave identifica una postulación aunque cambie su posición en la planilla:
 // fecha y hora del envío + correo original (o RUT + nombre si la fila se agregó a mano).
@@ -437,7 +499,7 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
   const original = campo => (campo === 'observaciones' ? observacionesOriginales : crudo(campo));
   for (const campo of EDITABLES) {
     // 'duplicada' (clave de la postulación principal) no es una corrección de datos: se muestra aparte.
-    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || !(campo in ed)) continue;
+    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || campo === 'fundadora' || campo === 'cargos' || !(campo in ed)) continue;
     if (String(ed[campo]).trim() !== String(original(campo)).trim()) {
       editados.push(campo); originales[campo] = original(campo);
     }
@@ -448,6 +510,8 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
     return crudo(campo);
   };
   const alertas = [];
+  const planilla = C.delPlanilla(v('gestion'));
+  const cargosDetalle = typeof ed.cargos === 'string' ? C.leer(ed.cargos) : planilla.cargos;
   // Etapa: la del texto de "Gestión" unida con la de los pasos (gana la más avanzada); una edición manual manda.
   const etapaCalculada = P.combinarEtapa(E.clasificarEtapa(v('gestion')), P.etapaPorPasos(pasos));
   let etapa = etapaCalculada;
@@ -488,7 +552,10 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
     fila: numero,
     gestion: N.normalizarTexto(v('gestion')),
     etapa,
-    cargos: E.extraerCargos(v('gestion')),
+    // Condición y cargos: lo que se anotó en la ficha manda; si no hay nada anotado, vale lo que dice la planilla (sin «Directora»: era del Directorio antiguo).
+    fundadora: ed.fundadora === 'si' ? true : ed.fundadora === 'no' ? false : planilla.fundadora,
+    cargosDetalle,
+    cargos: cargosDetalle.map(C.etiqueta),
     resultado: N.normalizarTexto(v('resultado')),
     modalidad: E.normalizarModalidad(v('modalidad')),
     ingreso: E.normalizarMonto(v('ingreso')),
@@ -604,6 +671,7 @@ definir("lib/ediciones", function (module, exports, require, __dirname, Buffer) 
 const { EDITABLES } = require('./procesar');
 const { ETAPAS } = require('./etapas');
 const { validarPasosGuardados } = require('./pasos');
+const { validar: validarCargos } = require('./cargos');
 
 // Valida un conjunto de campos editados. Devuelve { limpios } o { error }.
 function validarCampos(cambios) {
@@ -616,6 +684,14 @@ function validarCampos(cambios) {
     limpios[campo] = String(valor);
   }
   if (limpios.etapa !== undefined && !ETAPAS.includes(limpios.etapa)) return { error: 'Etapa no reconocida.' };
+  if (limpios.fundadora !== undefined && !['si', 'no'].includes(limpios.fundadora)) return { error: 'La condición de socia fundadora no es válida.' };
+  if (limpios.cargos !== undefined) {
+    let lista;
+    try { lista = JSON.parse(limpios.cargos); } catch { return { error: 'Los cargos no son válidos.' }; }
+    const v = validarCargos(lista);
+    if (v.error) return { error: v.error };
+    limpios.cargos = JSON.stringify(v.limpios); // se guarda ya limpio y ordenado
+  }
   return { limpios };
 }
 
@@ -1718,6 +1794,24 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       }
       const r = await almacen.editarVarios(porClave);
       return ok({ aplicadas: r.ok, fallidas: r.fallidas.length, aceptadas: aceptadas.length, ...(await datosActuales()) });
+    }
+
+    // ---------- Cargos y condición de socia fundadora ----------
+    // Se manda la lista COMPLETA de cargos de hoy (sin historial) y/o si es socia fundadora. Todo se valida en validarCampos y queda
+    // en el historial como cualquier otra corrección de la ficha.
+    if (ruta === 'POST /api/cargos') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { clave, cargos, fundadora } = a.cuerpo || {};
+      const registro = await buscarRegistro(clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      const cambios = {};
+      if (cargos !== undefined) cambios.cargos = JSON.stringify(cargos);
+      if (fundadora !== undefined) { if (typeof fundadora !== 'boolean') return fallo(400, 'Dato inválido.'); cambios.fundadora = fundadora ? 'si' : 'no'; }
+      if (!Object.keys(cambios).length) return fallo(400, 'No hay nada que cambiar.');
+      const v = validarCampos(cambios);
+      if (v.error) return fallo(400, v.error);
+      await almacen.editarCampos(registro.clave, v.limpios);
+      return ok(await datosActuales());
     }
 
     // ---------- Postulaciones activas / no activas ----------
