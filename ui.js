@@ -224,6 +224,8 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
     </div>
     ${d.editados.length && !editando ? `<section class="editada">Esta ficha tiene ${d.editados.length} campo(s) corregido(s) en la app (marcados con ✎). La planilla de Google no se modifica.
       <button class="sec btn-peq" id="restaurarEd">Deshacer correcciones</button></section>` : ''}
+    ${d.pasos && d.pasos.aprobada && !editando ? `<section class="editada">Aprobada por el directorio${d.pasos.bienvenida ? ' · bienvenida enviada el ' + esc(fechaCL(d.pasos.bienvenida.fecha)) : ''}.
+      <button class="sec btn-peq" id="abrirBienvenida">✉ Carta de bienvenida</button></section>` : ''}
     ${d.etapa === 'No califica' && !editando ? `<section class="editada">Etapa «No califica». Si el motivo es que trabaja en el sector público, hay una carta lista para responderle.
       <button class="sec btn-peq" id="abrirNoAcep">✉ Carta: solo mujeres del ámbito privado</button></section>` : ''}
     ${d.inactiva && !editando ? `<section class="editada">Esta postulación está <b>no activa</b>: se oculta del listado y no genera avisos. No se ha borrado nada.
@@ -566,6 +568,77 @@ async function deshacerEdiciones() {
   mostrar('Se restauraron los datos de la planilla.');
 }
 
+// ---- Carta de bienvenida ----
+// Se abre solo para postulaciones con el paso «Aprobada». Un solo correo: carta, resumen de estatutos y enlaces.
+const LARGO_MAX_URL_GMAIL = 6500; // si el enlace de Gmail fuera más largo, el mensaje se copia al portapapeles y se pega a mano
+let bvActual = null; // { d, correo }
+function estadoBv(texto, error) {
+  const el = $('bvEstado');
+  el.textContent = texto || '';
+  el.style.color = error ? 'var(--alerta)' : 'var(--verde)';
+}
+function configurarRegistroBv() {
+  const e = bvActual && bvActual.d.pasos && bvActual.d.pasos.bienvenida;
+  $('bvDeshacer').hidden = !e;
+  $('bvAyuda').hidden = !!e;
+  $('bvYaEnviada').hidden = !e;
+  if (e) $('bvYaEnviada').textContent = '✓ Bienvenida anotada como enviada el ' + fechaCL(e.fecha) + '.';
+}
+function cerrarModalBienvenida() { $('modalBienvenida').hidden = true; bvActual = null; }
+async function abrirModalBienvenida() {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d) return;
+  const actual = bvActual = { d, correo: null };
+  $('bvAvisos').innerHTML = '';
+  $('bvPara').textContent = '—'; $('bvAsunto').textContent = ''; $('bvCuerpo').value = ''; $('bvSinCorreo').hidden = true;
+  estadoBv('Preparando el mensaje…');
+  configurarRegistroBv();
+  $('modalBienvenida').hidden = false;
+  try {
+    const r = await fetch('/api/carta-bienvenida/texto?clave=' + encodeURIComponent(d.clave));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'No se pudo preparar la carta.');
+    if (bvActual !== actual) return;
+    actual.correo = j;
+    $('bvPara').textContent = j.destinatario || '—'; $('bvAsunto').textContent = j.asunto; $('bvCuerpo').value = j.cuerpo; $('bvSinCorreo').hidden = !j.correoInvalido;
+    $('bvAvisos').innerHTML = j.pagoIncluido ? '' : '<p class="sub" style="color:var(--alerta);margin:0 0 6px"><b>Esta carta todavía no incluye la cuota social ni los datos para pagar</b> (se agregarán cuando se defina la forma de pago). Si la envías ahora, esa información habrá que darla aparte.</p>';
+    estadoBv('');
+  } catch (e) { if (bvActual === actual) estadoBv(e.message, true); }
+}
+$('modalBienvenida').addEventListener('click', e => { if (e.target === $('modalBienvenida') || e.target.closest('#cerrarBv')) cerrarModalBienvenida(); });
+$('bvCopiar').addEventListener('click', async () => estadoBv((await copiarTexto($('bvCuerpo').value)) ? 'Mensaje copiado.' : 'No se pudo copiar: selecciónalo y presiona Ctrl+C.', false));
+$('bvGmail').addEventListener('click', async () => {
+  const actual = bvActual;
+  if (!actual || !actual.correo) return estadoBv('El mensaje aún se está preparando: espera un momento.', true);
+  const texto = $('bvCuerpo').value;
+  const completo = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo: texto, cuenta: correoEnvio });
+  const cabe = completo.length <= LARGO_MAX_URL_GMAIL;
+  const copiado = await copiarTexto(texto); // el mensaje queda en el portapapeles, por si Gmail no alcanza a recibirlo completo
+  const url = cabe ? completo : urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo: '(Pega aquí el mensaje: ya está copiado, usa Ctrl+V)', cuenta: correoEnvio });
+  const ventana = window.open(url, '_blank');
+  if (ventana) ventana.opener = null;
+  if (!ventana) return estadoBv('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
+  let anotada = false;
+  if (!actual.d.pasos.bienvenida) {
+    const r = await guardarPaso('bienvenida', true, { fecha: hoyLocalISO(), nota: 'correo abierto desde la app' });
+    if (r && bvActual === actual) { actual.d = datos.find(x => x.fila === seleccion) || actual.d; anotada = true; }
+  } else anotada = true;
+  if (bvActual !== actual) return;
+  configurarRegistroBv();
+  estadoBv('✓ Se abrió Gmail en otra pestaña' + (cabe ? ' con el mensaje listo' : ' con el destinatario y el asunto. El mensaje es largo: ' + (copiado ? 'ya está copiado; en Gmail, borra la línea de aviso y pega con Ctrl+V' : 'pulsa «Copiar mensaje» y pégalo en Gmail')) + '. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + ').' : '.') + (anotada ? ' Quedó anotado como enviado en la ficha.' : ''));
+});
+$('bvDeshacer').addEventListener('click', async () => {
+  const actual = bvActual;
+  if (!actual) return;
+  $('bvDeshacer').disabled = true;
+  const r = await guardarPaso('bienvenida', false);
+  $('bvDeshacer').disabled = false;
+  if (!r || bvActual !== actual) return;
+  actual.d = datos.find(x => x.fila === seleccion) || actual.d;
+  configurarRegistroBv();
+  estadoBv('Se quitó la marca de «Bienvenida enviada» de la ficha.');
+});
+
 // ---- Carta de no aceptación (mujeres del ámbito privado) ----
 // Se abre solo para postulaciones en etapa «No califica». El texto y el PDF salen del mismo lugar (el servidor).
 let naActual = null; // { d, url, nombre, correo }
@@ -720,6 +793,7 @@ $('ficha').addEventListener('click', e => {
   if (on('restaurarEd')) return deshacerEdiciones();
   if (on('quitarDuplicada')) return quitarMarcaDuplicada();
   if (on('abrirNoAcep')) return abrirModalNoAcep();
+  if (on('abrirBienvenida')) return abrirModalBienvenida();
   if (on('alternarActiva')) { const d = datos.find(x => x.fila === seleccion); return d && cambiarActivas([d.clave], !!d.inactiva); }
   if (on('prepararMensaje')) return abrirModalMensaje();
   if (on('verCarta')) return abrirModalCarta();
@@ -871,6 +945,7 @@ $('cartaConEnlace').addEventListener('change', () => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (!$('modalDoc').hidden) return cerrarDocumento();
+  if (!$('modalBienvenida').hidden) return cerrarModalBienvenida();
   if (!$('modalNoAcep').hidden) return cerrarModalNoAcep();
   if (!$('modalCarta').hidden) return cerrarModalCarta();
   if (!$('modalMensaje').hidden) return cerrarModalMensaje();
@@ -1283,7 +1358,7 @@ async function consultarPendientes() {
     actualizarAvisoCorrecciones(p.correcciones || 0);
     if (!$('panelCorrecciones').hidden && firmaPendientes !== null && p.firma !== firmaPendientes) cargarCorrecciones();
     const cambio = firmaPendientes !== null && p.firma !== firmaPendientes;
-    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden;
+    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden || !$('modalBienvenida').hidden;
     if (cambio && !ocupada) {
       const nuevos = p.pendientes > datos.filter(x => x.pendienteRevision).length;
       const d = await fetch('/api/postulaciones');

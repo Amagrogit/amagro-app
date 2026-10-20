@@ -1436,6 +1436,7 @@ const { leerSocias, planificar, camposAAplicar } = require('./socias');
 const { camposConAlerta, evaluarPropuesta, valorActual } = require('./correcciones');
 const { proponer, planDeAplicacion } = require('./duplicados');
 const noAceptacion = require('./cartaNoAceptacion');
+const bienvenida = require('./cartaBienvenida');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1864,6 +1865,16 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (ruta.startsWith('GET')) return ok({ ...noAceptacion.correo(registro), carnetPendiente: !!(registro.docs && registro.docs.carnet) });
       return { estado: 200, bytes: await noAceptacion.generar(registro, { logo: await E.logo() }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': 'attachment; filename="' + noAceptacion.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
+    }
+
+    // Carta de bienvenida: solo para postulaciones con el paso «Aprobada por el directorio». Un correo corto con la carta
+    // y los enlaces al resumen de los estatutos y a los estatutos completos (el texto sale de lib/cartaBienvenida.js).
+    if (ruta === 'GET /api/carta-bienvenida/texto') {
+      const registro = await buscarRegistro(consulta.get('clave'));
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
+      const enlaces = paginaSubida() ? { resumen: urlPagina('/resumen-estatutos-amagro-ag.pdf'), lectura: urlPagina('/estatutos-lectura-amagro-ag.pdf'), copiaNotarial: urlPagina('/estatutos-amagro-ag.pdf') } : {};
+      return ok({ ...bienvenida.correo(registro, enlaces), enlaces });
     }
 
     // Thunderbird: solo existe en el computador (en la web no hay).
@@ -2343,21 +2354,36 @@ const TAM = 11, INTERLINEA = 14.5, SEPARACION = 10;
 const LOGO_MAX = { ancho: 150, alto: 82 };
 
 // Párrafo con palabras en negrita, alineado a la izquierda. Devuelve la nueva posición vertical.
+// Lo que va pegado en el texto (por ejemplo, «aceptada» + «, pues») se dibuja pegado y nunca se corta entre líneas.
 function parrafoRico(lienzo, y, trozos, despues = SEPARACION) {
-  const palabras = trozos.flatMap(x => x.t.split(/\s+/).filter(Boolean).map(w => ({ w, b: x.b })));
+  const unidades = [];
+  let pegada = false; // ¿lo siguiente continúa la palabra anterior? (el trozo anterior no terminó en espacio)
+  for (const x of trozos) {
+    const partes = x.t.split(/(s+)/);
+    for (const p of partes) {
+      if (!p) continue;
+      if (/^s+$/.test(p)) { pegada = false; continue; }
+      const pieza = { w: p, b: x.b, ancho: medir(p, TAM, x.b) };
+      if (pegada && unidades.length) unidades[unidades.length - 1].push(pieza); else unidades.push([pieza]);
+      pegada = true;
+    }
+  }
   const espacio = medir(' ', TAM);
   const lineas = [];
   let linea = [], largo = 0;
-  for (const p of palabras) {
-    const ancho = medir(p.w, TAM, p.b);
+  for (const u of unidades) {
+    const ancho = u.reduce((n, p) => n + p.ancho, 0);
     if (linea.length && largo + espacio + ancho > ANCHO) { lineas.push(linea); linea = []; largo = 0; }
     largo += (linea.length ? espacio : 0) + ancho;
-    linea.push({ ...p, ancho });
+    linea.push(u);
   }
   if (linea.length) lineas.push(linea);
   lineas.forEach((l, i) => {
     let x = MARGEN;
-    for (const p of l) { lienzo.texto(x, y + i * INTERLINEA + 10.4, p.w, { negrita: p.b, tam: TAM }); x += p.ancho + espacio; }
+    for (const u of l) {
+      for (const p of u) { lienzo.texto(x, y + i * INTERLINEA + 10.4, p.w, { negrita: p.b, tam: TAM }); x += p.ancho; }
+      x += espacio;
+    }
   });
   return y + lineas.length * INTERLINEA + despues;
 }
@@ -2383,6 +2409,68 @@ function generar(registro, { ahora = new Date(), logo = null } = {}) {
 }
 
 module.exports = { generar, correo, nombreArchivo, fechaLarga, PARRAFOS, ASUNTO };
+
+});
+
+definir("lib/cartaBienvenida", function (module, exports, require, __dirname, Buffer) {
+// Correo de bienvenida a quien el Directorio aprobó: la carta (texto revisado por el Directorio) con los enlaces al resumen de los
+// estatutos y a los estatutos completos. Es corto a propósito: así entra completo en el enlace de Gmail. No se adjunta nada.
+//
+// PENDIENTE: la información de la cuota social y los datos para pagar. Se agregará cuando se defina la forma de pago
+// (por ejemplo, con Flow). Para sumarla basta con poner texto en SECCION_PAGO: se inserta bajo «Información importante».
+const { titulo } = require('./carta');
+
+const ASUNTO = '¡Bienvenida a AMAGRO AG!';
+const SECCION_PAGO = null; // ej.: 'Cuota social: ...\n\nDatos para el pago: ...'
+
+const CARTA = [
+  '¡Con mucha alegría te damos la más cordial bienvenida a AMAGRO A.G.!',
+  'Nos complace comunicarte que nuestro Directorio ha aprobado tu incorporación a esta gran comunidad de mujeres que aman el agro y trabajan por transformar su futuro.',
+  'AMAGRO, la primera Asociación Gremial de Mujeres del Agro en Chile, nace para representar, conectar y visibilizar a las mujeres de nuestro sector. Hoy, nuestro propósito va más allá: consolidarnos como una plataforma de oportunidades y desarrollo integral para las mujeres del agro y del mundo rural, impulsando sus talentos, fortaleciendo sus liderazgos y contribuyendo a su crecimiento personal, profesional, social y económico.',
+  'Creemos en el poder de la colaboración. Por eso, construimos redes y alianzas con instituciones públicas, privadas, gremiales y académicas para compartir conocimientos, abrir oportunidades, promover la innovación y la sustentabilidad, y hacer que nuestra voz sea escuchada en los espacios donde se toman las decisiones que impactan al sector.',
+  'Estamos convencidas de que cuando una mujer crece, se fortalece su familia, progresa su comunidad y se construye un mejor futuro para Chile.',
+  'En AMAGRO, cada socia aporta su experiencia, sus talentos y su visión. Queremos que encuentres aquí un espacio de encuentro, apoyo y oportunidades, donde juntas podamos generar un impacto real.',
+];
+
+// En la carta original decía «Adjuntamos nuestros Estatutos y una carta resumen»; como el correo no lleva adjuntos, se cambió por enlaces.
+const ESTATUTOS_INTRO = 'Estatutos gremiales: te dejamos un resumen con sus principales disposiciones, derechos y obligaciones, y los Estatutos completos, para tu conocimiento y consulta:';
+
+const DIRECTORIO = [
+  'Presidenta: Maritrini Lapuente',
+  'Vicepresidenta: Sandra Zolezzi',
+  'Tesorera: Carolina Uquillas',
+  'Secretaria: Liliana Camelio',
+  'Directora: María Eugenia Arévalo',
+];
+
+const CIERRE = [
+  'Para cualquier consulta, puedes escribirnos a socias@amagroag.cl.',
+  'Nos llena de entusiasmo contar contigo. Te invitamos a participar activamente, compartir tus ideas y ser protagonista de este proyecto que construimos entre todas.',
+];
+const FIRMA = ['Con mucho cariño,', '', 'Directorio AMAGRO A.G.', 'Asociación Gremial de Mujeres del Agro de Chile', '', 'AMAGRO, ¡MUJERES QUE AMAN EL AGRO!'];
+
+// enlaces: { resumen, lectura, copiaNotarial } (direcciones de los tres PDF de los estatutos)
+function correo(registro, enlaces = {}) {
+  const correoInvalido = !registro.correo || registro.alertas.some(a => /^Correo inválido/.test(a));
+  const lista = [
+    ...(enlaces.resumen ? [`• Resumen de los Estatutos: ${enlaces.resumen}`] : []),
+    ...(enlaces.lectura ? [`• Estatutos completos (versión de lectura): ${enlaces.lectura}`] : []),
+    ...(enlaces.copiaNotarial ? [`• Copia notarial (escaneada), que es el documento oficial: ${enlaces.copiaNotarial}`] : []),
+  ];
+  const cuerpo = [
+    `Estimada ${titulo(registro.nombre) || 'socia'},`, '',
+    ...CARTA.flatMap(p => [p, '']),
+    'Información importante para tu incorporación', '',
+    ESTATUTOS_INTRO, ...lista, '',
+    ...(SECCION_PAGO ? [SECCION_PAGO, ''] : []),
+    'Nuestro Directorio', ...DIRECTORIO, '',
+    ...CIERRE.flatMap(p => [p, '']),
+    ...FIRMA,
+  ].join('\n');
+  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: ASUNTO, cuerpo, pagoIncluido: !!SECCION_PAGO };
+}
+
+module.exports = { correo, ASUNTO };
 
 });
 
