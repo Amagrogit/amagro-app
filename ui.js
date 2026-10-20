@@ -39,7 +39,8 @@ function cargar(resp, conservar) {
   const extra = [...new Set(datos.flatMap(d => d.cargosDetalle.map(c => c.cargo)))].filter(c => !CARGOS_SUGERIDOS.includes(c)).sort((a, b) => a.localeCompare(b, 'es'));
   const porRegion = [...new Set(datos.flatMap(d => d.cargosDetalle.filter(c => c.cargo === DELEGADA && c.region).map(c => c.cargo + ' · ' + c.region)))].sort((a, b) => a.localeCompare(b, 'es'));
   const cuantas = f => datos.filter(d => !d.duplicadaDe && !d.inactiva && f(d)).length;
-  $('filtroCargo').innerHTML = '<option value="">Todos los cargos</option><option value="*">Con algún cargo</option>'
+  $('filtroCargo').innerHTML = '<option value="">Cargos: todos</option><option value="*">Con algún cargo</option>'
+    + '<optgroup label="Condición"><option value="fundadora">Socias fundadoras (' + cuantas(d => d.fundadora) + ')</option></optgroup>'
     + '<optgroup label="Por cargo">' + [...CARGOS_SUGERIDOS, ...extra].map(c => '<option value="c:' + esc(c) + '">' + esc(c) + ' (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === c)) + ')</option>').join('') + '</optgroup>'
     + '<optgroup label="Delegadas">' + '<option value="!region">Delegadas sin región (por completar) (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === DELEGADA && !x.region)) + ')</option>'
     + porRegion.map(e => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join('') + '</optgroup>';
@@ -71,9 +72,9 @@ function pintar() {
   const vis = datos.filter(d =>
     (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo].join(' ').toLowerCase().includes(q)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
-    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'fundadoras' ? d.fundadora : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
-    (!fc || (fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
+    (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
   ultimosVisibles = vis;
   // Orden: las filas sin dato quedan siempre al final, sea cual sea la dirección.
@@ -287,8 +288,10 @@ function avisosCarta(d) {
 }
 
 // Cargos de hoy (sin historial) y condición de socia fundadora. Quien puede editar agrega o quita cargos aquí mismo; la directiva solo los ve.
+let cargoEnEdicion = null; // posición del cargo que se está cambiando (null = ninguno)
 function bloqueCargos(d) {
-  const chips = d.cargosDetalle.map((c, i) => `<span class="chip${/falta la región$/.test(d.cargos[i]) ? ' mal' : ''}">${esc(d.cargos[i])}<button class="quitar-cargo cargos-edicion" data-quitar-cargo="${i}" title="Quitar este cargo" aria-label="Quitar ${esc(d.cargos[i])}">✕</button></span>`).join('');
+  cargoEnEdicion = null; // al dibujar la ficha de nuevo no queda ninguna edición a medias
+  const chips = d.cargosDetalle.map((c, i) => `<span class="chip${/falta la región$/.test(d.cargos[i]) ? ' mal' : ''}">${esc(d.cargos[i])}<button class="quitar-cargo cargos-edicion" data-editar-cargo="${i}" title="Cambiar este cargo (nombre o región)" aria-label="Cambiar ${esc(d.cargos[i])}">✎</button><button class="quitar-cargo cargos-edicion" data-quitar-cargo="${i}" title="Quitar este cargo" aria-label="Quitar ${esc(d.cargos[i])}">✕</button></span>`).join('');
   return `<section><h3>Cargos y condición</h3>
     <div>${d.fundadora ? '<span class="chip fund">Socia fundadora</span>' : ''}${chips || (d.fundadora ? '' : NADA)}</div>
     <div class="cargos-edicion" style="margin-top:8px">
@@ -297,7 +300,7 @@ function bloqueCargos(d) {
         <select id="cargoElegido" aria-label="Cargo"><option value="">Elige un cargo…</option>${(window.cargosParaElegir || CARGOS_SUGERIDOS).map(c => `<option>${esc(c)}</option>`).join('')}<option value="__otro">Otro cargo (escribirlo)…</option></select>
         <input id="cargoNuevo" placeholder="Escribe el cargo" maxlength="60" autocomplete="off" hidden style="flex:1 1 160px">
         <select id="cargoRegion" hidden><option value="">Región…</option>${regiones.map(r => `<option>${esc(r)}</option>`).join('')}</select>
-        <button class="btn-peq" id="agregarCargo">Agregar</button>
+        <button class="btn-peq" id="agregarCargo">Agregar</button> <button class="sec btn-peq" id="cancelarCargo" hidden>Cancelar</button>
       </div>
       <div class="sub" style="margin-top:4px">Elige un cargo de la lista, o «Otro» para escribir uno nuevo. La delegada regional lleva su región; puede haber varias por región.</div>
     </div>
@@ -626,9 +629,31 @@ $('ficha').addEventListener('change', e => {
   const d = datos.find(x => x.fila === seleccion);
   if (d) guardarCargos({ fundadora: e.target.checked }, e.target.checked ? 'Marcada como socia fundadora.' : 'Se quitó la condición de socia fundadora.');
 });
+const salirDeEdicionCargo = () => {
+  cargoEnEdicion = null;
+  $('agregarCargo').textContent = 'Agregar';
+  $('cancelarCargo').hidden = true;
+  $('cargoElegido').value = ''; $('cargoNuevo').value = ''; $('cargoRegion').value = '';
+  ajustarCamposCargo();
+};
 $('ficha').addEventListener('click', e => {
   const d = datos.find(x => x.fila === seleccion);
   if (!d) return;
+  if (e.target.closest('#cancelarCargo')) return salirDeEdicionCargo();
+  const editar = e.target.closest('[data-editar-cargo]');
+  if (editar) {
+    const i = Number(editar.dataset.editarCargo), c = d.cargosDetalle[i];
+    cargoEnEdicion = i;
+    const enLista = [...$('cargoElegido').options].some(o => o.value === c.cargo);
+    $('cargoElegido').value = enLista ? c.cargo : '__otro';
+    $('cargoNuevo').value = enLista ? '' : c.cargo;
+    ajustarCamposCargo();
+    $('cargoRegion').value = c.region || '';
+    $('agregarCargo').textContent = 'Guardar cambio';
+    $('cancelarCargo').hidden = false;
+    $('cargoElegido').scrollIntoView({ block: 'nearest' });
+    return mostrar('Cambiando «' + d.cargos[i] + '»: modifica el cargo o la región y pulsa «Guardar cambio».');
+  }
   const quitar = e.target.closest('[data-quitar-cargo]');
   if (quitar) {
     const i = Number(quitar.dataset.quitarCargo);
@@ -641,6 +666,7 @@ $('ficha').addEventListener('click', e => {
     const esDelegada = sinTil(cargo) === sinTil(DELEGADA);
     const region = esDelegada ? $('cargoRegion').value : '';
     if (esDelegada && !region) return mostrar('Elige la región de la delegada.', true);
+    if (cargoEnEdicion !== null) return guardarCargos({ cargos: cargosActuales(d).map((c, k) => (k === cargoEnEdicion ? { cargo, region } : c)) }, 'Cargo actualizado.');
     guardarCargos({ cargos: [...cargosActuales(d), { cargo, region }] }, 'Cargo agregado.');
   }
 });

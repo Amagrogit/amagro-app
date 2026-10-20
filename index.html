@@ -293,7 +293,7 @@
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Se ocultan del listado y de los avisos, <b>no se borra nada</b>, y se ven con el filtro «No activas» (ahí se pueden <b>volver a activar</b>).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
         <li><b>Postulación aprobada:</b> en su ficha aparece <b>✉ Carta de bienvenida</b>: un correo corto con el enlace a su carta de bienvenida (PDF con logo y su nombre) y los enlaces a los estatutos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
-        <li><b>Cargos y condición:</b> en la ficha, la sección «Cargos y condición» muestra si es <b>socia fundadora</b> y los cargos de hoy (presidenta, tesorera, delegada regional con su región, etc.). Se agregan o se quitan ahí mismo; en el listado hay un filtro «Todos los cargos».</li>
+        <li><b>Cargos y condición:</b> en la ficha, la sección «Cargos y condición» muestra si es <b>socia fundadora</b> y los cargos de hoy (presidenta, tesorera, delegada regional con su región, etc.). Se agregan o se quitan ahí mismo; en el listado, el filtro «Cargos» sirve para ver, por ejemplo, a las socias fundadoras o a las delegadas de una región.</li>
         <li><b>El menú <kbd>⚙</kbd></b> (arriba a la derecha) reúne las herramientas. Cada panel que se abre tiene su botón <b>✕ Cerrar</b>.</li>
       </ul>
       
@@ -461,11 +461,10 @@
       <option value="duplicadas">Solo personas con más de una postulación</option>
       <option value="sinrespuesta">Carta enviada sin respuesta (seguimiento)</option>
       <option value="porrevisar">Documentos recibidos por revisar</option>
-      <option value="fundadoras">Socias fundadoras</option>
       <option value="inactivas">No activas (ocultas de la gestión)</option>
       <option value="marcadas">Marcadas como duplicadas</option>
     </select>
-    <select id="filtroCargo" title="Filtrar por cargo"><option value="">Todos los cargos</option></select>
+    <select id="filtroCargo" title="Filtrar por cargo o por condición de socia fundadora"><option value="">Cargos: todos</option></select>
     <select id="region"><option value="">Todas las regiones</option></select>
     <datalist id="listaCargos"></datalist>
   </div>
@@ -630,6 +629,6 @@
 <script src="app.js?v=7c88e428"></script>
 <script src="mensaje.js?v=cf2ee39c"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=6484606d"></script>
+<script src="ui.js?v=37d1ab5a"></script>
 </body>
 </html>
