@@ -420,12 +420,57 @@ module.exports = { DELEGADA, CARGOS_SUGERIDOS, MAX_CARGOS, delPlanilla, leer, va
 
 });
 
+definir("lib/comisiones", function (module, exports, require, __dirname, Buffer) {
+// Comisiones: quién integra y quién coordina cada una. La lista de comisiones vive en la tabla «comisiones» (la cambia la administradora);
+// lo de cada socia se guarda en su ficha, campo «comisiones», como texto JSON: [{ id, rol }]. Se guarda el id (no el nombre), así que
+// renombrar una comisión no rompe nada.
+const ROLES = ['integrante', 'coordinadora'];
+const MAX_COMISIONES = 20;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const ETIQUETA_ROL = { integrante: 'integrante', coordinadora: 'coordinadora' };
+
+// Lee el texto guardado en la ficha; lo que no tenga sentido se ignora.
+function leer(texto) {
+  try {
+    const l = JSON.parse(texto);
+    if (!Array.isArray(l)) return [];
+    return l.filter(c => c && typeof c.id === 'string' && UUID.test(c.id)).map(c => ({ id: c.id, rol: ROLES.includes(c.rol) ? c.rol : 'integrante' }));
+  } catch { return []; }
+}
+
+// Valida lo que llega de la pantalla. idsValidos (opcional): los ids que existen hoy en la lista de comisiones.
+function validar(lista, idsValidos = null) {
+  if (!Array.isArray(lista)) return { error: 'Las comisiones no son válidas.' };
+  if (lista.length > MAX_COMISIONES) return { error: `Una socia puede estar en hasta ${MAX_COMISIONES} comisiones.` };
+  const limpios = [], vistos = new Set();
+  for (const c of lista) {
+    if (!c || typeof c.id !== 'string' || !UUID.test(c.id)) return { error: 'Las comisiones no son válidas.' };
+    if (!ROLES.includes(c.rol)) return { error: 'El rol en la comisión no es válido.' };
+    if (idsValidos && !idsValidos.has(c.id)) return { error: 'Una de las comisiones ya no existe. Actualiza la pantalla e inténtalo de nuevo.' };
+    if (vistos.has(c.id)) return { error: 'La socia ya está en esa comisión.' };
+    vistos.add(c.id);
+    limpios.push({ id: c.id, rol: c.rol });
+  }
+  return { limpios };
+}
+
+// Nombre de una comisión para guardar: sin espacios de más, entre 3 y 80 letras.
+function nombreValido(nombre) {
+  const n = String(nombre ?? '').replace(/\s+/g, ' ').trim();
+  return n.length >= 3 && n.length <= 80 ? { nombre: n } : { error: 'El nombre de la comisión debe tener entre 3 y 80 letras.' };
+}
+
+module.exports = { ROLES, ETIQUETA_ROL, MAX_COMISIONES, leer, validar, nombreValido };
+
+});
+
 definir("lib/procesar", function (module, exports, require, __dirname, Buffer) {
 const { parseCSV } = require('./csv');
 const N = require('./normalizar');
 const E = require('./etapas');
 const P = require('./pasos');
 const C = require('./cargos');
+const CM = require('./comisiones');
 
 // Cada campo se detecta por palabras clave en el encabezado, porque la planilla real
 // puede tener mayúsculas, tildes o texto extra.
@@ -481,7 +526,7 @@ function mapearColumnas(encabezados) {
 // solo tiene texto libre en "Gestión".
 const EDITABLES = ['nombre', 'rut', 'correo', 'nacimiento', 'telefono', 'region', 'comuna', 'direccion',
   'profesion', 'situacion', 'empresa', 'origen', 'resultado', 'modalidad', 'ingreso', 'citacion',
-  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva', 'fundadora', 'cargos'];
+  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva', 'fundadora', 'cargos', 'comisiones'];
 
 // La clave identifica una postulación aunque cambie su posición en la planilla:
 // fecha y hora del envío + correo original (o RUT + nombre si la fila se agregó a mano).
@@ -499,7 +544,7 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
   const original = campo => (campo === 'observaciones' ? observacionesOriginales : crudo(campo));
   for (const campo of EDITABLES) {
     // 'duplicada' (clave de la postulación principal) no es una corrección de datos: se muestra aparte.
-    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || campo === 'fundadora' || campo === 'cargos' || !(campo in ed)) continue;
+    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || campo === 'fundadora' || campo === 'cargos' || campo === 'comisiones' || !(campo in ed)) continue;
     if (String(ed[campo]).trim() !== String(original(campo)).trim()) {
       editados.push(campo); originales[campo] = original(campo);
     }
@@ -556,6 +601,8 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
     fundadora: ed.fundadora === 'si' ? true : ed.fundadora === 'no' ? false : planilla.fundadora,
     cargosDetalle,
     cargos: cargosDetalle.map(C.etiqueta),
+    // Comisiones de la socia (id y rol); la API les pone el nombre con la lista de comisiones.
+    comisionesAsignadas: typeof ed.comisiones === 'string' ? CM.leer(ed.comisiones) : [],
     resultado: N.normalizarTexto(v('resultado')),
     modalidad: E.normalizarModalidad(v('modalidad')),
     ingreso: E.normalizarMonto(v('ingreso')),
@@ -672,6 +719,7 @@ const { EDITABLES } = require('./procesar');
 const { ETAPAS } = require('./etapas');
 const { validarPasosGuardados } = require('./pasos');
 const { validar: validarCargos } = require('./cargos');
+const { validar: validarComisiones } = require('./comisiones');
 
 // Valida un conjunto de campos editados. Devuelve { limpios } o { error }.
 function validarCampos(cambios) {
@@ -691,6 +739,13 @@ function validarCampos(cambios) {
     const v = validarCargos(lista);
     if (v.error) return { error: v.error };
     limpios.cargos = JSON.stringify(v.limpios); // se guarda ya limpio y ordenado
+  }
+  if (limpios.comisiones !== undefined) {
+    let lista;
+    try { lista = JSON.parse(limpios.comisiones); } catch { return { error: 'Las comisiones no son válidas.' }; }
+    const v = validarComisiones(lista);
+    if (v.error) return { error: v.error };
+    limpios.comisiones = JSON.stringify(v.limpios);
   }
   return { limpios };
 }
@@ -1199,6 +1254,27 @@ class Almacen {
     await this.sesion.pedir('POST', 'configuracion?on_conflict=clave', { cuerpo: { clave: 'hoja_url', valor: url, actualizado: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
   }
 
+  // ---- Comisiones (la lista; quién integra cada una se guarda en la ficha de cada socia) ----
+  // Si la tabla todavía no existe (falta ejecutar el esquema), la aplicación sigue funcionando, solo sin comisiones.
+  async comisiones() {
+    try {
+      const { datos } = await this.sesion.pedir('GET', 'comisiones?select=id,nombre,estatutaria&order=estatutaria.asc,nombre.asc');
+      return Array.isArray(datos) ? datos : [];
+    } catch { return []; }
+  }
+  async crearComision({ nombre, estatutaria }) {
+    const { datos } = await this.sesion.pedir('POST', 'comisiones', { cuerpo: { nombre, estatutaria: !!estatutaria }, prefer: 'return=representation' });
+    return Array.isArray(datos) ? datos[0] : datos;
+  }
+  async cambiarComision(id, { nombre, estatutaria }) {
+    const { datos } = await this.sesion.pedir('PATCH', `comisiones?id=eq.${filtro(id)}`, { cuerpo: { nombre, estatutaria: !!estatutaria }, prefer: 'return=representation' });
+    if (!Array.isArray(datos) || datos.length !== 1) throw new ErrorSupabase('No se pudo cambiar: no tienes permiso o la comisión no existe.', { estado: 403 });
+  }
+  async borrarComision(id) {
+    const { datos } = await this.sesion.pedir('DELETE', `comisiones?id=eq.${filtro(id)}`, { prefer: 'return=representation' });
+    if (!Array.isArray(datos) || datos.length !== 1) throw new ErrorSupabase('No se pudo borrar: no tienes permiso o la comisión no existe.', { estado: 403 });
+  }
+
   // ---- Cuentas de usuarias (solo la administradora; crear y restablecer las hace la función de Supabase) ----
   usuarios() { return this.sesion.funcion('documentos', { accion: 'usuarios_listar' }); }
   crearUsuario({ correo, nombre, rol }) { return this.sesion.funcion('documentos', { accion: 'usuarios_crear', correo, nombre, rol }); }
@@ -1527,6 +1603,7 @@ const { camposConAlerta, evaluarPropuesta, valorActual } = require('./correccion
 const { proponer, planDeAplicacion } = require('./duplicados');
 const noAceptacion = require('./cartaNoAceptacion');
 const bienvenida = require('./cartaBienvenida');
+const CM = require('./comisiones');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1597,9 +1674,12 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
   }
 
   async function respuestaDatos(o) {
-    const [ediciones, documentos] = await Promise.all([almacen.leerEdiciones(), almacen.resumenDocumentos()]);
+    const [ediciones, documentos, catalogo] = await Promise.all([almacen.leerEdiciones(), almacen.resumenDocumentos(), almacen.comisiones()]);
     const r = procesarCSV(o.texto, new Date(), soloCampos(ediciones), soloPasos(ediciones));
+    const porId = new Map(catalogo.map(c => [c.id, c]));
     for (const reg of r.registros) {
+      // Comisiones de la socia con su nombre (las que ya no existen en la lista se ignoran).
+      reg.comisiones = reg.comisionesAsignadas.filter(a => porId.has(a.id)).map(a => ({ ...porId.get(a.id), rol: a.rol }));
       const docs = documentos[reg.clave] || null;
       reg.docs = docs;
       reg.pendienteRevision = !reg.inactiva && pendienteDeRevision(docs, reg.pasos); // lo no activo no genera avisos
@@ -1615,6 +1695,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       paginaSubida: !!paginaSubida(),
       correoEnvio: (proyecto && proyecto.correoEnvio) || '',
       urlApp: (proyecto && proyecto.urlApp) || '',
+      comisionesCatalogo: catalogo,
       ...r,
     };
   }
@@ -1794,6 +1875,48 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       }
       const r = await almacen.editarVarios(porClave);
       return ok({ aplicadas: r.ok, fallidas: r.fallidas.length, aceptadas: aceptadas.length, ...(await datosActuales()) });
+    }
+
+    // ---------- Comisiones ----------
+    // La lista (crear, renombrar, borrar) la cambia solo la administradora. Una comisión con integrantes no se borra.
+    if (ruta === 'POST /api/comisiones/guardar') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar la lista de comisiones.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { id, nombre, estatutaria } = a.cuerpo || {};
+      const n = CM.nombreValido(nombre);
+      if (n.error) return fallo(400, n.error);
+      if (estatutaria !== undefined && typeof estatutaria !== 'boolean') return fallo(400, 'Dato inválido.');
+      try {
+        if (id !== undefined) {
+          if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Comisión inválida.');
+          await almacen.cambiarComision(id, { nombre: n.nombre, estatutaria });
+        } else await almacen.crearComision({ nombre: n.nombre, estatutaria });
+      } catch (e) {
+        if (e && e.codigo === '23505') return fallo(409, 'Ya existe una comisión con ese nombre.');
+        throw e;
+      }
+      return ok(await datosActuales());
+    }
+    if (ruta === 'POST /api/comisiones/borrar') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar la lista de comisiones.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { id } = a.cuerpo || {};
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Comisión inválida.');
+      const integrantes = (await datosActuales()).registros.filter(r => r.comisiones.some(c => c.id === id)).length;
+      if (integrantes) return fallo(409, 'Todavía tiene ' + integrantes + (integrantes === 1 ? ' integrante' : ' integrantes') + ': quítalas primero de la comisión.');
+      await almacen.borrarComision(id);
+      return ok(await datosActuales());
+    }
+    // Qué comisiones integra una socia y con qué rol (integrante o coordinadora): se manda la lista completa.
+    if (ruta === 'POST /api/comisiones/asignar') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { clave, comisiones } = a.cuerpo || {};
+      const registro = await buscarRegistro(clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      const v = CM.validar(comisiones, new Set((await almacen.comisiones()).map(c => c.id)));
+      if (v.error) return fallo(400, v.error);
+      await almacen.editarCampos(registro.clave, { comisiones: JSON.stringify(v.limpios) });
+      return ok(await datosActuales());
     }
 
     // ---------- Cargos y condición de socia fundadora ----------

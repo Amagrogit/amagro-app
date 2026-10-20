@@ -11,6 +11,7 @@ const fechaCL = iso => iso ? iso.split('-').reverse().join('-') : '';
 const pagoTexto = d => [d.ingreso != null ? dinero(d.ingreso) : '', d.modalidad].filter(Boolean).join(' · ');
 
 let regiones = [];
+let comisionesCatalogo = []; // la lista de comisiones (id, nombre, estatutaria)
 const DELEGADA = 'Delegada regional';
 const CARGOS_SUGERIDOS = ['Presidenta', 'Vicepresidenta', 'Secretaria', 'Tesorera', 'Directora', DELEGADA];
 let editando = false;
@@ -23,6 +24,7 @@ function cargar(resp, conservar) {
   const previo = { region: $('region').value, etapa: $('etapa').value, sel: seleccion };
   datos = resp.registros;
   regiones = resp.regiones || regiones;
+  comisionesCatalogo = resp.comisionesCatalogo || [];
   pasosDef = resp.pasosDef || pasosDef;
   subidaDisponible = !!resp.paginaSubida;
   correoEnvio = resp.correoEnvio || '';
@@ -46,6 +48,13 @@ function cargar(resp, conservar) {
     + porRegion.map(e => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join('') + '</optgroup>';
   if ([...$('filtroCargo').options].some(o => o.value === filtroCargoPrevio)) $('filtroCargo').value = filtroCargoPrevio;
   window.cargosParaElegir = [...CARGOS_SUGERIDOS, ...extra]; // se usa en la ficha, al agregar un cargo
+  // Comisiones: el filtro muestra siempre todas las de la lista, aunque no tengan integrantes todavía.
+  const filtroComisionPrevio = $('filtroComision').value;
+  const enComision = f => datos.filter(d => !d.duplicadaDe && !d.inactiva && d.comisiones.some(f)).length;
+  $('filtroComision').innerHTML = '<option value="">Comisiones: todas</option><option value="*">En alguna comisión (' + datos.filter(d => !d.duplicadaDe && !d.inactiva && d.comisiones.length).length + ')</option>'
+    + '<option value="coord">Coordinadoras (' + enComision(c => c.rol === 'coordinadora') + ')</option>'
+    + comisionesCatalogo.map(c => '<option value="' + esc(c.id) + '">' + esc(c.nombre) + (c.estatutaria ? ' (estatutaria)' : '') + ' (' + enComision(x => x.id === c.id) + ')</option>').join('');
+  if ([...$('filtroComision').options].some(o => o.value === filtroComisionPrevio)) $('filtroComision').value = filtroComisionPrevio;
   const cuenta = {};
   datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
   $('etapa').innerHTML = '<option value="">Todas las etapas</option>' +
@@ -64,7 +73,7 @@ function cargar(resp, conservar) {
 let ultimosVisibles = [];
 const visiblesActuales = () => ultimosVisibles;
 function pintar() {
-  const fc = $('filtroCargo').value;
+  const fc = $('filtroCargo').value, fcom = $('filtroComision').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
@@ -74,6 +83,7 @@ function pintar() {
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
+    (!fcom || (fcom === '*' ? d.comisiones.length > 0 : fcom === 'coord' ? d.comisiones.some(c => c.rol === 'coordinadora') : d.comisiones.some(c => c.id === fcom))) &&
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
   ultimosVisibles = vis;
@@ -255,6 +265,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
         <div class="sub">${esc(o.marca) || 'sin fecha'} · ${esc(o.nombre)}</div></div>`).join('')}
     </section>` : ''}
     ${editando ? '' : bloqueCargos(d)}
+    ${editando ? '' : bloqueComisiones(d)}
     ${secciones().map(s => `<section><h3>${s.titulo}</h3><dl>
       ${s.campos.map(c => filaCampo(d, c)).join('')}
       ${s.titulo === 'Gestión' ? `<dt>Texto original</dt><dd>${dato(d.gestion)}</dd>` : ''}
@@ -285,6 +296,25 @@ function avisosCarta(d) {
     /^RUT inválido/.test(a) ? ['RUT'] : /^Teléfono/.test(a) ? ['teléfono'] : /^(Región no|Marcó más de una región)/.test(a) ? ['región'] : /^Correo inválido/.test(a) ? ['correo'] : []))];
   return (dudosos.length ? `<p class="sub" style="color:var(--alerta);margin:0 0 6px">Revisa antes de enviarla: ${esc(dudosos.join(', '))} ${dudosos.length > 1 ? 'tienen' : 'tiene'} alertas y saldrían tal como están en la ficha.</p>` : '')
     + (faltan.length ? `<p class="sub" style="margin:0 0 6px">Faltan datos (quedarán en blanco para escribirlos a mano): ${esc(faltan.join(', '))}.</p>` : '');
+}
+
+// Comisiones de la socia: integrante o coordinadora. Quien puede editar las agrega y las quita aquí mismo; la directiva solo las ve.
+let comisionEnEdicion = null; // id de la comisión cuyo rol se está cambiando (null = ninguna)
+const etiquetaComision = c => c.nombre + (c.estatutaria ? ' (estatutaria)' : '') + ' · ' + c.rol;
+function bloqueComisiones(d) {
+  comisionEnEdicion = null; // al dibujar la ficha de nuevo no queda ninguna edición a medias
+  const chips = d.comisiones.map(c => `<span class="chip${c.rol === 'coordinadora' ? ' nuevo' : ''}" title="${c.estatutaria ? 'Comisión estatutaria' : 'Comisión de trabajo'}">${esc(etiquetaComision(c))}<button class="quitar-cargo comisiones-edicion" data-editar-comision="${esc(c.id)}" title="Cambiar el rol en esta comisión" aria-label="Cambiar el rol en ${esc(c.nombre)}">✎</button><button class="quitar-cargo comisiones-edicion" data-quitar-comision="${esc(c.id)}" title="Sacar de esta comisión" aria-label="Sacar de ${esc(c.nombre)}">✕</button></span>`).join('');
+  return `<section><h3>Comisiones</h3>
+    <div>${chips || NADA}</div>
+    ${comisionesCatalogo.length ? `<div class="comisiones-edicion" style="margin-top:8px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <select id="comisionElegida" aria-label="Comisión"><option value="">Elige una comisión…</option>${comisionesCatalogo.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}${c.estatutaria ? ' (estatutaria)' : ''}</option>`).join('')}</select>
+        <select id="comisionRol" aria-label="Rol en la comisión"><option value="integrante">Integrante</option><option value="coordinadora">Coordinadora</option></select>
+        <button class="btn-peq" id="agregarComision">Agregar</button> <button class="sec btn-peq" id="cancelarComision" hidden>Cancelar</button>
+      </div>
+      <div class="sub" style="margin-top:4px">Una socia puede estar en varias comisiones, y cada comisión puede tener más de una coordinadora.</div>
+    </div>` : '<p class="sub" style="margin:6px 0 0">Todavía no hay comisiones creadas.</p>'}
+  </section>`;
 }
 
 // Cargos de hoy (sin historial) y condición de socia fundadora. Quien puede editar agrega o quita cargos aquí mismo; la directiva solo los ve.
@@ -604,6 +634,96 @@ async function deshacerEdiciones() {
   cargar(r, true);
   mostrar('Se restauraron los datos de la planilla.');
 }
+
+// ---- Comisiones ----
+// Los cargos del Directorio: según los estatutos, quien está en el Directorio no puede integrar la Comisión Revisora de Cuentas.
+const CARGOS_DIRECTORIO = ['Presidenta', 'Vicepresidenta', 'Secretaria', 'Tesorera', 'Directora'];
+async function guardarComisiones(lista, mensaje) {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d) return;
+  const r = await post('/api/comisiones/asignar', { clave: d.clave, comisiones: lista });
+  if (r.error) { mostrar(r.error, true); abrirFicha(seleccion, false, true); return; }
+  cargar(r, true);
+  mostrar(mensaje);
+}
+const comisionesActuales = d => d.comisiones.map(c => ({ id: c.id, rol: c.rol }));
+const salirDeEdicionComision = () => {
+  comisionEnEdicion = null;
+  $('agregarComision').textContent = 'Agregar';
+  $('cancelarComision').hidden = true;
+  $('comisionElegida').disabled = false; $('comisionElegida').value = ''; $('comisionRol').value = 'integrante';
+};
+$('ficha').addEventListener('click', e => {
+  const d = datos.find(x => x.fila === seleccion);
+  if (!d) return;
+  if (e.target.closest('#cancelarComision')) return salirDeEdicionComision();
+  const editar = e.target.closest('[data-editar-comision]');
+  if (editar) {
+    const c = d.comisiones.find(x => x.id === editar.dataset.editarComision);
+    if (!c) return;
+    comisionEnEdicion = c.id;
+    $('comisionElegida').value = c.id; $('comisionElegida').disabled = true; $('comisionRol').value = c.rol;
+    $('agregarComision').textContent = 'Guardar cambio';
+    $('cancelarComision').hidden = false;
+    $('comisionRol').scrollIntoView({ block: 'nearest' });
+    return mostrar('Cambiando el rol en «' + c.nombre + '»: elige el rol y pulsa «Guardar cambio».');
+  }
+  const quitar = e.target.closest('[data-quitar-comision]');
+  if (quitar) {
+    const c = d.comisiones.find(x => x.id === quitar.dataset.quitarComision);
+    if (!c || !confirm('¿Sacar a ' + d.nombre + ' de la comisión «' + c.nombre + '»?')) return;
+    return guardarComisiones(comisionesActuales(d).filter(x => x.id !== c.id), 'Sacada de la comisión.');
+  }
+  if (e.target.closest('#agregarComision')) {
+    const id = $('comisionElegida').value, rol = $('comisionRol').value;
+    if (!id) return mostrar('Elige una comisión de la lista.', true);
+    if (comisionEnEdicion !== null) return guardarComisiones(comisionesActuales(d).map(x => (x.id === comisionEnEdicion ? { id: x.id, rol } : x)), 'Rol actualizado.');
+    if (d.comisiones.some(c => c.id === id)) return mostrar('Ya está en esa comisión: usa el lápiz ✎ para cambiar su rol.', true);
+    const com = comisionesCatalogo.find(c => c.id === id);
+    if (com && com.estatutaria && d.cargosDetalle.some(c => CARGOS_DIRECTORIO.includes(c.cargo))
+      && !confirm('Según los estatutos, quienes están en el Directorio no pueden integrar la «' + com.nombre + '». ' + d.nombre + ' tiene un cargo en el Directorio hoy.\n\n¿Agregarla igual?')) return;
+    guardarComisiones([...comisionesActuales(d), { id, rol }], 'Agregada a la comisión.');
+  }
+});
+
+// Panel de la administradora (⚙ → Comisiones): crear, renombrar y borrar comisiones.
+function pintarPanelComisiones() {
+  const cuenta = id => datos.filter(d => d.comisiones.some(c => c.id === id)).length;
+  $('comisionesLista').innerHTML = comisionesCatalogo.length
+    ? '<table class="tabla-usuarias"><thead><tr><th>Comisión</th><th>Tipo</th><th>Integrantes</th><th></th></tr></thead><tbody>'
+      + comisionesCatalogo.map(c => `<tr data-comision="${esc(c.id)}"><td>${esc(c.nombre)}</td><td>${c.estatutaria ? '<span class="chip">Estatutaria</span>' : 'De trabajo'}</td><td>${cuenta(c.id)}${c.estatutaria ? ' <span class="sub">(los estatutos hablan de 3)</span>' : ''}</td><td><button class="sec btn-peq" data-renombrar-comision>Renombrar</button> <button class="sec btn-peq" data-borrar-comision>Borrar</button></td></tr>`).join('')
+      + '</tbody></table>'
+    : 'Todavía no hay comisiones.';
+}
+$('verComisiones').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelComisiones')) pintarPanelComisiones(); });
+async function cambiarListaComisiones(ruta, cuerpo, mensaje) {
+  const r = await post(ruta, cuerpo);
+  if (r.error) return mostrar(r.error, true);
+  cargar(r, true);
+  pintarPanelComisiones();
+  mostrar(mensaje);
+  return true;
+}
+$('formNuevaComision').addEventListener('submit', async e => {
+  e.preventDefault();
+  const ok = await cambiarListaComisiones('/api/comisiones/guardar', { nombre: $('ncNombre').value, estatutaria: $('ncEstatutaria').checked }, 'Comisión creada.');
+  if (ok) $('formNuevaComision').reset();
+});
+$('comisionesLista').addEventListener('click', async e => {
+  const fila = e.target.closest('[data-comision]');
+  if (!fila) return;
+  const c = comisionesCatalogo.find(x => x.id === fila.dataset.comision);
+  if (!c) return;
+  if (e.target.closest('[data-renombrar-comision]')) {
+    const nombre = prompt('Nuevo nombre de la comisión:', c.nombre);
+    if (nombre === null || nombre.trim() === c.nombre) return;
+    return cambiarListaComisiones('/api/comisiones/guardar', { id: c.id, nombre, estatutaria: c.estatutaria }, 'Comisión renombrada.');
+  }
+  if (e.target.closest('[data-borrar-comision]')) {
+    if (!confirm('¿Borrar la comisión «' + c.nombre + '»? Solo se puede si no tiene integrantes.')) return;
+    return cambiarListaComisiones('/api/comisiones/borrar', { id: c.id }, 'Comisión borrada.');
+  }
+});
 
 // ---- Cargos y condición de socia fundadora ----
 const sinTil = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -1096,7 +1216,7 @@ document.addEventListener('keydown', e => {
   if (editando) abrirFicha(seleccion); else cerrarFicha();
 });
 
-['buscar', 'filtro', 'filtroCargo', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
+['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
 
 // Orden por columna. Cada clic en el mismo encabezado recorre: primera dirección -> la opuesta -> sin orden.
 // La fecha parte con las más recientes arriba; el nombre, de la A a la Z.
@@ -1134,7 +1254,7 @@ async function post(url, cuerpo) {
 }
 
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
-const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados'];
+const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
 // Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
 PANELES.forEach(id => {
@@ -1275,8 +1395,8 @@ $('exportar').addEventListener('click', () => {
   // Una columna por paso de admisión, con la fecha en que se hizo (vacía si está pendiente), y la nota si la hay.
   const columnasPasos = pasosDef.flatMap(p => ['paso_' + p.id, 'nota_' + p.id]);
   const valoresPasos = d => pasosDef.flatMap(p => { const e = d.pasos[p.id]; return [e ? e.fecha : '', e ? e.nota : '']; });
-  const filas = [[...cols, ...columnasPasos, 'cargos', 'fundadora', 'alertas'].map(celdaCsv),
-    ...datos.map(d => [...cols.map(c => d[c]), ...valoresPasos(d), d.cargos.join(' | '), d.fundadora ? 'sí' : '', d.alertas.join(' | ')].map(celdaCsv))];
+  const filas = [[...cols, ...columnasPasos, 'cargos', 'fundadora', 'comisiones', 'alertas'].map(celdaCsv),
+    ...datos.map(d => [...cols.map(c => d[c]), ...valoresPasos(d), d.cargos.join(' | '), d.fundadora ? 'sí' : '', d.comisiones.map(etiquetaComision).join(' | '), d.alertas.join(' | ')].map(celdaCsv))];
   const csv = filas.map(f => f.join(SEP)).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
@@ -1562,6 +1682,7 @@ async function entrarALaApp(usuario) {
   $('hojaUrl').readOnly = !esAdmin; $('guardarUrl').hidden = !esAdmin;
   $('importarSocias').hidden = !esAdmin;
   $('verUsuarias').hidden = !esAdmin;
+  $('verComisiones').hidden = !esAdmin;
   $('usuario').textContent = usuario ? usuario.nombre + ' · ' + (ROL[usuario.rol] || usuario.rol) : '';
   const r = await fetch('/api/postulaciones');
   if (r.ok) { cargar(await r.json()); revisarMigracion(); if (puedeEditarRol(usuario.rol)) iniciarConsultaPendientes(); }
@@ -1772,6 +1893,10 @@ function textoValor(v) {
   if (typeof v === 'object') return v.fecha ? fechaCL(v.fecha) + (v.nota ? ' — ' + v.nota : '') : JSON.stringify(v);
   return String(v);
 }
+// Texto de las comisiones guardadas (JSON) para el historial, con el nombre que tienen hoy.
+function comisionesTexto(json) {
+  try { return (JSON.parse(json) || []).map(c => ((comisionesCatalogo.find(x => x.id === c.id) || {}).nombre || 'otra comisión') + ' (' + c.rol + ')').join(', '); } catch { return ''; }
+}
 // Texto de los cargos guardados (JSON) para el historial.
 function cargosTexto(json) {
   try { return (JSON.parse(json) || []).map(c => c.cargo + (c.region ? ' · ' + c.region : '')).join(', '); } catch { return ''; }
@@ -1780,6 +1905,7 @@ function lineaHistorial(h, conNombre) {
   const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
   const etiquetaPaso = id => (pasosDef.find(p => p.id === id) || {}).etiqueta || id;
   const cambios = Object.entries(h.detalle || {}).map(([k, v]) => {
+    if (k === 'comisiones') return 'cambió las comisiones: ' + (comisionesTexto(v.antes) || 'ninguna') + ' → ' + (comisionesTexto(v.despues) || 'ninguna');
     if (k === 'fundadora') return v.despues === 'si' ? 'la marcó como socia fundadora' : 'quitó la condición de socia fundadora';
     if (k === 'cargos') return 'cambió los cargos: ' + (cargosTexto(v.antes) || 'sin cargos') + ' → ' + (cargosTexto(v.despues) || 'sin cargos');
     if (k === 'inactiva') return v.despues ? 'la marcó como no activa' : 'la volvió a activa';
