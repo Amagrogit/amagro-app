@@ -1500,7 +1500,7 @@ async function copiarEnlace(conMensaje) {
   const nombre = d ? String(d.nombre || '').trim().split(/\s+/)[0] : '';
   const primer = nombre ? nombre[0].toUpperCase() + nombre.slice(1).toLowerCase() : 'postulante';
   const texto = conMensaje
-    ? `Hola ${primer},\n\nGracias por postular a AMAGRO AG. Para continuar necesitamos tu carta de solicitud firmada y una copia de tu carnet de identidad (por ambos lados). Puedes subirlos desde el computador o el celular en este enlace:\n\n${enlaceNuevo.url}\n\nEl enlace sirve una sola vez y vence el ${fechaCL(enlaceNuevo.vence.slice(0, 10))}. Revisamos tu carnet solo para verificar tu identidad y después lo borramos.\n\nSaludos,\n[Nombre de quien envía]\nAMAGRO AG`
+    ? `Hola ${primer},\n\nGracias por postular a AMAGRO AG. Para continuar necesitamos tu carta de solicitud firmada y una copia de tu carnet de identidad (por ambos lados). Puedes subirlos desde el computador o el celular en este enlace:\n\n${enlaceNuevo.url}\n\nEl enlace sirve una sola vez y vence el ${fechaCL(enlaceNuevo.vence.slice(0, 10))}. Revisamos tu carnet solo para verificar tu identidad y después lo borramos.\n\nSaludos,\nEquipo de Socias AMAGRO AG`
     : enlaceNuevo.url;
   const ok = await copiarTexto(texto);
   mostrar(ok ? (conMensaje ? 'Mensaje copiado. Recuerda reemplazar [Nombre de quien envía] antes de enviarlo.' : 'Enlace copiado.') : 'No se pudo copiar automáticamente: selecciona el enlace y presiona Ctrl+C.', !ok);
@@ -1826,7 +1826,7 @@ function invitarPorCorreo() {
   const i = invitacionPendiente;
   if (!i) return;
   const url = urlApp || (location.origin + location.pathname.replace(/index\.html$/, ''));
-  const m = construirInvitacion({ nombre: i.nombre, correo: i.correo, rol: i.rol, url, nueva: i.nueva, firma: (usuarioActual && usuarioActual.nombre) || undefined });
+  const m = construirInvitacion({ nombre: i.nombre, correo: i.correo, rol: i.rol, url, nueva: i.nueva });
   const ventana = window.open(urlGmail({ destinatario: m.destinatario, asunto: m.asunto, cuerpo: m.cuerpo, cuenta: correoEnvio, copia: remitente }), '_blank');
   if (ventana) ventana.opener = null;
   else mostrar('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);

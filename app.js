@@ -2655,7 +2655,7 @@ function correo(registro) {
   return {
     correoInvalido,
     destinatario: correoInvalido ? '' : registro.correo,
-    asunto: ASUNTO,
+    asunto: registro.nombre ? ASUNTO + ' · ' + titulo(registro.nombre) : ASUNTO,
     cuerpo: [`Estimada ${nombreDe(registro)}:`, '', ...PARRAFOS.flatMap(p => [sinFormato(p), '']), ...DESPEDIDA].join('\n'),
   };
 }
@@ -2864,7 +2864,7 @@ function correo(registro, enlaces = {}) {
     CIERRE[0], '',
     ...FIRMA,
   ].join('\n');
-  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: ASUNTO, cuerpo, pagoIncluido: !!SECCION_PAGO, marca: MARCA_CARTA };
+  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: registro.nombre ? ASUNTO + ' · ' + titulo(registro.nombre) : ASUNTO, cuerpo, pagoIncluido: !!SECCION_PAGO, marca: MARCA_CARTA };
 }
 
 function nombreArchivo(nombre) {

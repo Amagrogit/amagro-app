@@ -6,6 +6,14 @@
 (function (raiz) {
   const fechaCL = iso => (iso ? iso.split('-').reverse().join('/') : '');
   const capitalizar = s => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : '');
+  // Firma común de todos los correos de la aplicación (no lleva el nombre de quien los envía: salen de la cuenta de socias).
+  const FIRMA_EQUIPO = 'Equipo de Socias AMAGRO AG';
+  // Nombre completo con mayúscula solo al inicio de cada palabra (de, del, la… van en minúscula).
+  const PARTICULAS = ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e'];
+  const nombreCompleto = n => String(n || '').trim().toLowerCase().replace(/(^|[\s\-´'’])(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+    .split(' ').map((p, i) => (i > 0 && PARTICULAS.includes(p.toLowerCase()) ? p.toLowerCase() : p)).join(' ');
+  // El asunto lleva el nombre para distinguir los correos en la carpeta de copias.
+  const conNombre = (asunto, nombre) => (nombreCompleto(nombre) ? asunto + ' · ' + nombreCompleto(nombre) : asunto);
 
   const MARCA_ENLACE_DATOS = '[ENLACE PARA CORREGIR]';
   function construirMensaje(d, conEnlace = false) {
@@ -43,22 +51,21 @@
         : ['Puedes responder directamente este correo.']),
       '',
       'Saludos cordiales,',
-      '[Nombre de quien envía]',
-      'AMAGRO AG',
+      FIRMA_EQUIPO,
     ].join('\n');
 
     return {
       hayPuntos: puntos.length > 0,
       correoInvalido,
       destinatario: correoInvalido ? '' : d.correo || '',
-      asunto: 'AMAGRO AG · Confirmación de datos de tu postulación',
+      asunto: conNombre('AMAGRO AG · Confirmación de datos de tu postulación', d.nombre),
       cuerpo,
     };
   }
 
   // Correo que acompaña a la carta de solicitud de ingreso (el PDF se adjunta a mano: un enlace de correo no puede adjuntar).
   const MARCA_ENLACE = '[ENLACE DE SUBIDA]';
-  function construirCorreoCarta(d, firma = '[Nombre de quien envía]', conEnlace = false) {
+  function construirCorreoCarta(d, firma = FIRMA_EQUIPO, conEnlace = false) {
     const correoInvalido = !d.correo || d.alertas.some(a => /^Correo inválido/.test(a));
     const primerNombre = capitalizar(String(d.nombre || '').trim().split(/\s+/)[0]);
     if (conEnlace) {
@@ -66,7 +73,7 @@
       return {
         correoInvalido,
         destinatario: correoInvalido ? '' : d.correo,
-        asunto: 'AMAGRO AG · Carta de solicitud de ingreso',
+        asunto: conNombre('AMAGRO AG · Carta de solicitud de ingreso', d.nombre),
         cuerpo: [
           `Hola ${primerNombre || 'postulante'},`,
           '',
@@ -84,14 +91,14 @@
           '',
           'Saludos cordiales,',
           firma,
-          'AMAGRO AG',
+          ...(firma === FIRMA_EQUIPO ? [] : ['AMAGRO AG']),
         ].join('\n'),
       };
     }
     return {
       correoInvalido,
       destinatario: correoInvalido ? '' : d.correo,
-      asunto: 'AMAGRO AG · Carta de solicitud de ingreso',
+      asunto: conNombre('AMAGRO AG · Carta de solicitud de ingreso', d.nombre),
       cuerpo: [
         `Hola ${primerNombre || 'postulante'},`,
         '',
@@ -106,7 +113,7 @@
         '',
         'Saludos cordiales,',
         firma,
-        'AMAGRO AG',
+        ...(firma === FIRMA_EQUIPO ? [] : ['AMAGRO AG']),
       ].join('\n'),
     };
   }
@@ -127,7 +134,7 @@
     secretaria: ['secretaria', 'puedes ver y trabajar las postulaciones: corregir datos, marcar pasos, enviar enlaces y correos, y revisar los documentos recibidos.'],
     directiva: ['directiva (solo consulta)', 'puedes consultar el listado, las fichas, el historial y las cartas firmadas (no los carnets), pero no modificas nada.'],
   };
-  function construirInvitacion({ nombre, correo, rol, url, nueva = true, firma = '[Nombre de quien envía]' }) {
+  function construirInvitacion({ nombre, correo, rol, url, nueva = true, firma = FIRMA_EQUIPO }) {
     const primer = capitalizar(String(nombre || '').trim().split(/\s+/)[0]) || 'hola';
     const [etiqueta, permisos] = CATEGORIAS[rol] || ['usuaria', 'puedes usar la aplicación.'];
     const comun = [
@@ -141,11 +148,11 @@
       '',
       'Saludos cordiales,',
       firma,
-      'AMAGRO AG',
+      ...(firma === FIRMA_EQUIPO ? [] : ['AMAGRO AG']),
     ];
     return {
       destinatario: correo,
-      asunto: nueva ? 'AMAGRO AG · Te invitamos a la aplicación de gestión de socias' : 'AMAGRO AG · Nueva contraseña temporal para la aplicación',
+      asunto: conNombre(nueva ? 'AMAGRO AG · Te invitamos a la aplicación de gestión de socias' : 'AMAGRO AG · Nueva contraseña temporal para la aplicación', nombre),
       cuerpo: [
         `Hola ${primer},`,
         '',
@@ -158,7 +165,7 @@
     };
   }
 
-  const api = { construirMensaje, construirCorreoCarta, construirInvitacion, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
+  const api = { FIRMA_EQUIPO, construirMensaje, construirCorreoCarta, construirInvitacion, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(raiz, api);
 })(typeof window !== 'undefined' ? window : globalThis);
