@@ -275,14 +275,14 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
       ? `<textarea data-campo="observaciones" data-ini="${esc(d.observaciones)}">${esc(d.observaciones)}</textarea>`
       : (d.observaciones ? `<div class="texto">${esc(d.observaciones)}</div>` : NADA)}</section>
     ${editando ? '' : bloqueCarta(d)}
-    ${editando ? '' : '<section><h3>Historial de cambios</h3><div id="histFicha" class="sub">Cargando…</div></section>'}
+    ${editando ? '' : '<section><h3>Historial de cambios</h3><button class="sec" id="verHistFicha" type="button">Ver historial</button><div id="histFicha" class="sub" hidden></div></section>'}
     <section><h3>Alertas de calidad de datos</h3>${d.alertas.length ? d.alertas.map(a => `<span class="chip mal">${esc(a)}</span>`).join('') : '<span class="chip ok">Sin alertas</span>'}
       ${editando ? '' : bloqueMensaje(d)}</section>
     ${editando ? '<div class="pie"><button id="guardarEd">Guardar cambios</button><button class="sec" id="cancelarEd">Cancelar</button></div>' : ''}`;
   $('ficha').classList.add('abierta');
   $('ficha').setAttribute('aria-hidden', 'false');
   $('ficha').scrollTop = conservarPosicion ? posicion : 0;
-  if (!editando) { cargarHistorialFicha(d.clave); cargarDocumentos(d); }
+  if (!editando) cargarDocumentos(d);
   if (document.body.classList.contains('lectura')) $('ficha').querySelectorAll('.paso-fila input').forEach(el => { el.disabled = true; });
   pintar();
 }
@@ -1928,6 +1928,16 @@ async function cargarHistorialFicha(clave) {
     caja.innerHTML = j.historial && j.historial.length ? j.historial.map(h => lineaHistorial(h, false)).join('') : 'Sin cambios registrados.';
   } catch { if ($('histFicha')) $('histFicha').textContent = 'No se pudo cargar el historial.'; }
 }
+// El historial de la ficha va escondido tras un botón (así la ficha no queda tan larga) y se carga recién al abrirlo.
+$('ficha').addEventListener('click', async e => {
+  const b = e.target.closest('#verHistFicha');
+  if (!b) return;
+  const caja = $('histFicha');
+  if (!caja.hidden) { caja.hidden = true; b.textContent = 'Ver historial'; return; }
+  caja.hidden = false; caja.textContent = 'Cargando…'; b.textContent = 'Ocultar historial';
+  const d = datos.find(x => x.fila === seleccion);
+  if (d) await cargarHistorialFicha(d.clave);
+});
 $('verHistorial').addEventListener('click', async () => {
   cerrarMenu();
   if (!alternarPanel('panelHistorial')) return;
