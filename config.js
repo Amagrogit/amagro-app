@@ -4,5 +4,6 @@ window.AMAGRO_WEB = {
   "clavePublica": "sb_publishable_NEJ4pi7Aq_9qOCLlJ4BegA_DCV6ZX5a",
   "paginaSubida": "https://amagrogit.github.io/amagro-subida/",
   "correoEnvio": "amagroingresos@gmail.com",
+  "remitente": "socias@amagroag.cl",
   "urlApp": "https://amagrogit.github.io/amagro-app/"
 };

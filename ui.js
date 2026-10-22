@@ -28,6 +28,7 @@ function cargar(resp, conservar) {
   pasosDef = resp.pasosDef || pasosDef;
   subidaDisponible = !!resp.paginaSubida;
   correoEnvio = resp.correoEnvio || '';
+  remitente = resp.remitente || '';
   urlApp = resp.urlApp || '';
   plazoRespuesta = resp.plazoRespuestaDias || plazoRespuesta;
   $('hojaUrl').value = resp.hojaUrl || '';
@@ -195,6 +196,7 @@ function puntosPasos(d) {
 
 let pasosDef = [];       // lista de pasos, la entrega el servidor
 let urlApp = '';             // dirección pública de la aplicación (la define supabase/proyecto.json)
+let remitente = '';          // dirección que ve la socia como remitente (Gmail envía como ella: «Enviar como»); si falta, vale la cuenta de Gmail
 let correoEnvio = '';        // cuenta de Gmail desde la que se envían los correos (la define supabase/proyecto.json)
 let subidaDisponible = false; // ¿está configurada la página donde la postulante sube sus documentos?
 let plazoRespuesta = 15; // días sin respuesta a la carta antes de avisar
@@ -499,7 +501,7 @@ async function abrirEnGmail() {
   ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio });
   const recordar = cuerpo.includes('[Nombre de quien envía]') ? ' Recuerda reemplazar [Nombre de quien envía] en la firma.' : '';
   const anotada = await anotarEnvio();
-  estadoCarta('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + actual.correo.destinatario + '. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + '; si Gmail pide ingresar a esa cuenta, hazlo una vez y quedará abierta).' : ' (Gmail usa la cuenta que tengas abierta en el navegador).') + (anotada ? ' Quedó anotado como enviado en la ficha.' : '') + recordar);
+  estadoCarta('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + actual.correo.destinatario + '. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + '; si Gmail pide ingresar a esa cuenta, hazlo una vez y quedará abierta).' : ' (Gmail usa la cuenta que tengas abierta en el navegador).') + (anotada ? ' Quedó anotado como enviado en la ficha.' : '') + recordar);
 }
 
 // Pide al servidor que abra Thunderbird con el correo y la carta adjunta. No envía nada.
@@ -890,7 +892,7 @@ $('bvGmail').addEventListener('click', async () => {
   } else anotada = true;
   if (bvActual !== actual) return;
   configurarRegistroBv();
-  estadoBv('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + (actual.correo.destinatario || 'la socia') + '. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + ').' : '.') + (anotada ? ' Quedó anotado como enviado en la ficha.' : ''));
+  estadoBv('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + (actual.correo.destinatario || 'la socia') + '. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ').' : '.') + (anotada ? ' Quedó anotado como enviado en la ficha.' : ''));
 });
 $('bvDeshacer').addEventListener('click', async () => {
   const actual = bvActual;
@@ -951,7 +953,7 @@ $('naGmail').addEventListener('click', () => {
   if (!naActual || !naActual.correo) return estadoNa('La carta aún se está preparando: espera un momento.', true);
   const ventana = window.open(urlGmail({ destinatario: naActual.correo.destinatario, asunto: naActual.correo.asunto, cuerpo: $('naCuerpo').value, cuenta: correoEnvio }), '_blank');
   if (ventana) ventana.opener = null;
-  estadoNa(ventana ? '✓ Se abrió Gmail en otra pestaña con el mensaje listo. Revisa y pulsa Enviar' + (correoEnvio ? ' (sale desde ' + correoEnvio + ').' : '.')
+  estadoNa(ventana ? '✓ Se abrió Gmail en otra pestaña con el mensaje listo. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ').' : '.')
     : 'El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', !ventana);
 });
 $('naPdf').addEventListener('click', () => {
@@ -1101,7 +1103,7 @@ $('modalMensaje').addEventListener('click', e => {
       if (cuerpo === null || mensajeActual !== actual) { if (ventana) ventana.close(); return; }
       if (!ventana) return estadoModal('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
       ventana.location.href = urlGmail({ destinatario: actual.destinatario, asunto: actual.asunto, cuerpo, cuenta: correoEnvio });
-      estadoModal('✓ Se abrió Gmail en otra pestaña' + (correoEnvio ? ' (sale desde ' + correoEnvio + ')' : '') + '. Revisa y pulsa Enviar.' + recordarDe(cuerpo));
+      estadoModal('✓ Se abrió Gmail en otra pestaña' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ')' : '') + '. Revisa y pulsa Enviar.' + recordarDe(cuerpo));
     });
   }
   if (on('abrirCorreo')) {
