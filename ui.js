@@ -45,7 +45,7 @@ function cargar(resp, conservar) {
     + '<optgroup label="Condición"><option value="fundadora">Socias fundadoras (' + cuantas(d => d.fundadora) + ')</option></optgroup>'
     + '<optgroup label="Por cargo">' + [...CARGOS_SUGERIDOS, ...extra].map(c => '<option value="c:' + esc(c) + '">' + esc(c) + ' (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === c)) + ')</option>').join('') + '</optgroup>'
     + '<optgroup label="Delegadas">' + '<option value="!region">Delegadas sin región (por completar) (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === DELEGADA && !x.region)) + ')</option>'
-    + porRegion.map(e => '<option value="' + esc(e) + '">' + esc(e) + '</option>').join('') + '</optgroup>';
+    + porRegion.map(e => '<option value="' + esc(e) + '">' + esc(e) + ' (' + cuantas(d => d.cargosDetalle.some(x => x.cargo === DELEGADA && x.cargo + ' · ' + x.region === e)) + ')</option>').join('') + '</optgroup>';
   if ([...$('filtroCargo').options].some(o => o.value === filtroCargoPrevio)) $('filtroCargo').value = filtroCargoPrevio;
   window.cargosParaElegir = [...CARGOS_SUGERIDOS, ...extra]; // se usa en la ficha, al agregar un cargo
   // Comisiones: el filtro muestra siempre todas las de la lista, aunque no tengan integrantes todavía.
