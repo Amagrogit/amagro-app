@@ -498,7 +498,7 @@ async function abrirEnGmail() {
   const cuerpo = await cuerpoFinal();
   if (cuerpo === null || cartaActual !== actual) { if (ventana) ventana.close(); return; }
   if (!ventana) return estadoCarta('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
-  ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio });
+  ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio, copia: remitente });
   const recordar = cuerpo.includes('[Nombre de quien envía]') ? ' Recuerda reemplazar [Nombre de quien envía] en la firma.' : '';
   const anotada = await anotarEnvio();
   estadoCarta('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + actual.correo.destinatario + '. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + '; si Gmail pide ingresar a esa cuenta, hazlo una vez y quedará abierta).' : ' (Gmail usa la cuenta que tengas abierta en el navegador).') + (anotada ? ' Quedó anotado como enviado en la ficha.' : '') + recordar);
@@ -884,7 +884,7 @@ $('bvGmail').addEventListener('click', async () => {
   const cuerpo = await cuerpoFinalBv();
   if (cuerpo === null || bvActual !== actual) { if (ventana) ventana.close(); return; }
   if (!ventana) return estadoBv('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
-  ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio });
+  ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio, copia: remitente });
   let anotada = false;
   if (!actual.d.pasos.bienvenida) {
     const r = await guardarPaso('bienvenida', true, { fecha: hoyLocalISO(), nota: 'correo abierto desde la app' });
@@ -951,7 +951,7 @@ async function abrirModalNoAcep() {
 $('modalNoAcep').addEventListener('click', e => { if (e.target === $('modalNoAcep') || e.target.closest('#cerrarNa')) cerrarModalNoAcep(); });
 $('naGmail').addEventListener('click', () => {
   if (!naActual || !naActual.correo) return estadoNa('La carta aún se está preparando: espera un momento.', true);
-  const ventana = window.open(urlGmail({ destinatario: naActual.correo.destinatario, asunto: naActual.correo.asunto, cuerpo: $('naCuerpo').value, cuenta: correoEnvio }), '_blank');
+  const ventana = window.open(urlGmail({ destinatario: naActual.correo.destinatario, asunto: naActual.correo.asunto, cuerpo: $('naCuerpo').value, cuenta: correoEnvio, copia: remitente }), '_blank');
   if (ventana) ventana.opener = null;
   estadoNa(ventana ? '✓ Se abrió Gmail en otra pestaña con el mensaje listo. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ').' : '.')
     : 'El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', !ventana);
@@ -1102,7 +1102,7 @@ $('modalMensaje').addEventListener('click', e => {
     return cuerpoFinalMensaje().then(cuerpo => {
       if (cuerpo === null || mensajeActual !== actual) { if (ventana) ventana.close(); return; }
       if (!ventana) return estadoModal('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
-      ventana.location.href = urlGmail({ destinatario: actual.destinatario, asunto: actual.asunto, cuerpo, cuenta: correoEnvio });
+      ventana.location.href = urlGmail({ destinatario: actual.destinatario, asunto: actual.asunto, cuerpo, cuenta: correoEnvio, copia: remitente });
       estadoModal('✓ Se abrió Gmail en otra pestaña' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ')' : '') + '. Revisa y pulsa Enviar.' + recordarDe(cuerpo));
     });
   }
@@ -1827,7 +1827,7 @@ function invitarPorCorreo() {
   if (!i) return;
   const url = urlApp || (location.origin + location.pathname.replace(/index\.html$/, ''));
   const m = construirInvitacion({ nombre: i.nombre, correo: i.correo, rol: i.rol, url, nueva: i.nueva, firma: (usuarioActual && usuarioActual.nombre) || undefined });
-  const ventana = window.open(urlGmail({ destinatario: m.destinatario, asunto: m.asunto, cuerpo: m.cuerpo, cuenta: correoEnvio }), '_blank');
+  const ventana = window.open(urlGmail({ destinatario: m.destinatario, asunto: m.asunto, cuerpo: m.cuerpo, cuenta: correoEnvio, copia: remitente }), '_blank');
   if (ventana) ventana.opener = null;
   else mostrar('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
 }

@@ -113,8 +113,10 @@
 
   // Dirección que abre la redacción de Gmail (en el navegador) con el mensaje ya escrito. Gmail no permite adjuntar por aquí.
   // Con "cuenta", Gmail abre la redacción con esa cuenta (si está abierta en el navegador; si no, pide ingresar a ella).
-  function urlGmail({ destinatario, asunto, cuerpo, cuenta }) {
-    const q = [...(cuenta ? [['authuser', cuenta]] : []), ['view', 'cm'], ['fs', '1'], ['to', destinatario || ''], ['su', asunto || ''], ['body', cuerpo || '']];
+  // Con "copia", va una copia oculta (Cco) a esa dirección, para que quede el registro en su bandeja (no se agrega si es la misma que el destinatario).
+  function urlGmail({ destinatario, asunto, cuerpo, cuenta, copia }) {
+    const cco = copia && String(copia).toLowerCase() !== String(destinatario || '').trim().toLowerCase();
+    const q = [...(cuenta ? [['authuser', cuenta]] : []), ['view', 'cm'], ['fs', '1'], ['to', destinatario || ''], ...(cco ? [['bcc', copia]] : []), ['su', asunto || ''], ['body', cuerpo || '']];
     return 'https://mail.google.com/mail/?' + q.map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   }
 
