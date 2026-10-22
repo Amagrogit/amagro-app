@@ -416,7 +416,7 @@ function validar(lista) {
 // «Delegada regional · MAULE», o «Delegada regional · falta la región».
 const etiqueta = c => (c.cargo === DELEGADA ? `${c.cargo} · ${c.region || 'falta la región'}` : c.cargo);
 
-module.exports = { DELEGADA, CARGOS_SUGERIDOS, MAX_CARGOS, delPlanilla, leer, validar, etiqueta };
+module.exports = { REGIONES, DELEGADA, CARGOS_SUGERIDOS, MAX_CARGOS, delPlanilla, leer, validar, etiqueta };
 
 });
 
@@ -556,7 +556,11 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
   };
   const alertas = [];
   const planilla = C.delPlanilla(v('gestion'));
-  const cargosDetalle = typeof ed.cargos === 'string' ? C.leer(ed.cargos) : planilla.cargos;
+  // La región de una delegada sin región anotada es la de su propia ficha (si la ficha tiene una sola y válida).
+  const regFicha = N.normalizarRegion(v('region'));
+  const regDelegada = regFicha.valida && !regFicha.multiple && C.REGIONES.includes(regFicha.valor) ? regFicha.valor : '';
+  const cargosDetalle = (typeof ed.cargos === 'string' ? C.leer(ed.cargos) : planilla.cargos)
+    .map(c => (c.cargo === C.DELEGADA && !c.region ? { ...c, region: regDelegada } : c));
   // Etapa: la del texto de "Gestión" unida con la de los pasos (gana la más avanzada); una edición manual manda.
   const etapaCalculada = P.combinarEtapa(E.clasificarEtapa(v('gestion')), P.etapaPorPasos(pasos));
   let etapa = etapaCalculada;
