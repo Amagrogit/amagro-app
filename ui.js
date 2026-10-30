@@ -118,7 +118,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip mal" title="${esc(d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>` : '<span class="chip ok">OK</span>'}</td>
@@ -439,8 +439,9 @@ async function deshacerEnvio() {
   estadoCarta('Se quitó la marca de "Carta enviada" de la ficha.');
 }
 
-function abrirModalCarta() {
-  const d = datos.find(x => x.fila === seleccion);
+function abrirModalCarta(fila = seleccion) {
+  const d = datos.find(x => x.fila === fila);
+  if (d) seleccion = d.fila; // el envío anota el paso en la ficha que está seleccionada
   if (!d) return;
   const correo = construirCorreoCarta(d, undefined, subidaDisponible);
   const actual = cartaActual = { d, correo, url: null, nombre: null, enlace: null, textoInicial: correo.cuerpo, conEnlace: subidaDisponible };
@@ -506,6 +507,7 @@ function cerrarModalCarta() {
   $('vistaCarta').src = 'about:blank';
   $('modalCarta').hidden = true;
   cartaActual = null;
+  if (seleccion !== null && !$('ficha').classList.contains('abierta')) { seleccion = null; pintar(); }
 }
 
 function descargarPdfActual() {
@@ -1016,6 +1018,14 @@ $('aplicarDuplicados').addEventListener('click', async () => {
 });
 
 $('filas').addEventListener('click', e => {
+  const enviar = e.target.closest('[data-enviar-carta]');
+  if (enviar) {
+    if (!puedeSalir()) return;
+    editando = false;
+    abrirModalCarta(Number(enviar.dataset.enviarCarta));
+    pintar();
+    return;
+  }
   const b = e.target.closest('[data-fila]');
   if (b && puedeSalir()) abrirFicha(Number(b.dataset.fila));
 });
