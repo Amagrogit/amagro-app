@@ -1612,7 +1612,7 @@ const CM = require('./comisiones');
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
 //  - dentro del navegador (versión web), donde la pantalla le habla directo a Supabase.
-// No usa nada propio de Node: lo que depende del entorno (archivos, PDF, Thunderbird, descarga de la planilla) llega en "entorno".
+// No usa nada propio de Node: lo que depende del entorno (archivos, PDF, descarga de la planilla) llega en "entorno".
 //
 // entorno (todo opcional):
 //   config() / guardarConfig(obj)  datos propios de ese equipo (por ejemplo, cuándo se descargó el último respaldo)
@@ -1624,7 +1624,6 @@ const CM = require('./comisiones');
 //   carta { generarCarta, nombreArchivo }       generador del PDF de la carta
 //   migracion { pendientes() -> obj | null, hecho() }   correcciones que quedaron en el equipo de antes
 //   copiaLocal(ediciones) / copias() -> n       copia de seguridad antes de restaurar un respaldo
-//   thunderbird { info(), abrir(datos) }        solo en el computador
 //
 // Devuelve { estado, json } | { estado, texto, tipo, cabeceras } | { estado, bytes, tipo, cabeceras }.
 
@@ -2142,16 +2141,6 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
       return { estado: 200, bytes: await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos() }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': 'attachment; filename="' + bienvenida.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
-    }
-
-    // Thunderbird: solo existe en el computador (en la web no hay).
-    if (ruta === 'GET /api/correo/info') return ok({ thunderbird: !!(E.thunderbird && E.thunderbird.info()) });
-    if (ruta === 'POST /api/carta/correo') {
-      if (!E.thunderbird) return fallo(404, 'No se encontró Thunderbird en este computador.', { sinThunderbird: true });
-      const { clave, fecha, asunto, cuerpo: texto } = JSON.parse(cuerpo);
-      const registro = await buscarRegistro(clave);
-      if (!registro) return fallo(404, NO_ENCONTRADA);
-      return E.thunderbird.abrir({ registro, fecha: fecha === true, asunto, cuerpo: texto, fallo, ok });
     }
 
     return { estado: 404, texto: 'No encontrado', tipo: 'text/plain; charset=utf-8' };

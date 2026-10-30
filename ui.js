@@ -390,18 +390,14 @@ async function cargarVistaCarta() {
   }
 }
 
-// Si hay Thunderbird, ese botón es el principal (abre el correo con la carta ya adjunta);
-// el de correo genérico queda como alternativa, que descarga la carta para adjuntarla a mano.
+// Con enlace de subida, el botón principal es «Abrir en Gmail»; sin enlace, queda el de correo genérico, que descarga la carta para adjuntarla a mano.
 function configurarBotonesCorreo() {
   const c = cartaActual;
   if (!c) return;
-  const hayCorreo = !!c.correo.destinatario, conThunderbird = hayCorreo && c.thunderbird && !c.conEnlace;
+  const hayCorreo = !!c.correo.destinatario;
   $('abrirGmail').hidden = !(hayCorreo && c.conEnlace);
-  $('abrirThunderbird').hidden = !conThunderbird;
   const generico = $('abrirCartaCorreo');
   generico.hidden = !hayCorreo || c.conEnlace;
-  generico.classList.toggle('sec', conThunderbird);
-  generico.textContent = conThunderbird ? 'Abrir en otro correo (descarga la carta)' : '✉ Abrir en mi correo y descargar la carta';
   configurarRegistroEnvio();
 }
 
@@ -447,7 +443,7 @@ function abrirModalCarta() {
   const d = datos.find(x => x.fila === seleccion);
   if (!d) return;
   const correo = construirCorreoCarta(d, undefined, subidaDisponible);
-  const actual = cartaActual = { d, correo, url: null, nombre: null, thunderbird: false, enlace: null, textoInicial: correo.cuerpo, conEnlace: subidaDisponible };
+  const actual = cartaActual = { d, correo, url: null, nombre: null, enlace: null, textoInicial: correo.cuerpo, conEnlace: subidaDisponible };
   $('cartaEnlaceFila').hidden = !subidaDisponible;
   $('cartaConEnlace').checked = true;
   $('cartaAvisos').innerHTML = avisosCarta(d);
@@ -456,18 +452,12 @@ function abrirModalCarta() {
   $('cartaCuerpo').value = correo.cuerpo;
   $('cartaSinCorreo').hidden = !correo.correoInvalido;
   configurarBotonesCorreo();
-  $('cartaFecha').checked = false;
+  $('cartaFecha').checked = true; // por defecto la carta lleva la fecha de hoy; se puede desmarcar
   estadoCarta('');
   $('vistaCarta').src = 'about:blank';
   $('modalCarta').hidden = false;
   $('abrirCartaCorreo').hidden ? $('descargarCartaPdf').focus() : $('abrirCartaCorreo').focus();
   cargarVistaCarta();
-  fetch('/api/correo/info').then(r => r.json()).then(i => {
-    if (cartaActual !== actual) return;
-    actual.thunderbird = !!i.thunderbird;
-    configurarBotonesCorreo();
-    if (actual.thunderbird && !$('abrirThunderbird').hidden) $('abrirThunderbird').focus();
-  }).catch(() => { /* sin Thunderbird detectado: queda la opción genérica */ });
 }
 
 // Si el texto lleva la marca del enlace, crea el enlace de subida (una sola vez por ventana) y la reemplaza.
@@ -501,36 +491,14 @@ async function abrirEnGmail() {
   ventana.location.href = urlGmail({ destinatario: actual.correo.destinatario, asunto: actual.correo.asunto, cuerpo, cuenta: correoEnvio, copia: remitente });
   const recordar = cuerpo.includes('[Nombre de quien envía]') ? ' Recuerda reemplazar [Nombre de quien envía] en la firma.' : '';
   const anotada = await anotarEnvio();
-  estadoCarta('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + actual.correo.destinatario + '. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + '; si Gmail pide ingresar a esa cuenta, hazlo una vez y quedará abierta).' : ' (Gmail usa la cuenta que tengas abierta en el navegador).') + (anotada ? ' Quedó anotado como enviado en la ficha.' : '') + recordar);
-}
-
-// Pide al servidor que abra Thunderbird con el correo y la carta adjunta. No envía nada.
-async function abrirEnThunderbird() {
-  const actual = cartaActual;
-  if (!actual) return;
-  const boton = $('abrirThunderbird');
-  boton.disabled = true;
-  setTimeout(() => { boton.disabled = false; }, 4000); // evita abrir dos ventanas por un doble clic
-  estadoCarta('Preparando el correo…');
-  const cuerpo = await cuerpoFinal();
-  if (cuerpo === null || cartaActual !== actual) return;
-  const recordar = cuerpo.includes('[Nombre de quien envía]') ? ' Recuerda reemplazar [Nombre de quien envía] en la firma.' : '';
-  estadoCarta('Abriendo Thunderbird…');
-  try {
-    const r = await fetch('/api/carta/correo', {
-      method: 'POST',
-      body: JSON.stringify({ clave: actual.d.clave, fecha: $('cartaFecha').checked, asunto: actual.correo.asunto, cuerpo }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      if (j.sinThunderbird && cartaActual === actual) { actual.thunderbird = false; configurarBotonesCorreo(); }
-      return estadoCarta((j.error || 'No se pudo abrir Thunderbird.') + (j.sinThunderbird ? ' Usa la otra opción.' : ''), true);
-    }
-    const anotada = await anotarEnvio();
-    estadoCarta(`✓ Se abrió Thunderbird con la carta adjunta, para ${j.para}. Revisa el mensaje y pulsa Enviar.${anotada ? ' La carta quedó anotada como enviada en la ficha.' : ''}${recordar}`);
-  } catch (e) {
-    estadoCarta('No se pudo abrir Thunderbird: ' + e.message, true);
+  if (anotada && cartaActual === actual && !recordar) {
+    // Listo: se cierran la carta y la ficha para pasar a la siguiente persona. El aviso queda arriba y se puede cerrar.
+    const nombre = actual.d.nombre;
+    cerrarModalCarta();
+    cerrarFicha();
+    return mostrar('✓ Se abrió Gmail con el correo para ' + nombre + ' (' + actual.correo.destinatario + '). Revísalo y pulsa Enviar allí. Quedó anotado como enviado en su ficha.');
   }
+  estadoCarta('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + actual.correo.destinatario + '. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + '; si Gmail pide ingresar a esa cuenta, hazlo una vez y quedará abierta).' : ' (Gmail usa la cuenta que tengas abierta en el navegador).') + (anotada ? ' Quedó anotado como enviado en la ficha.' : '') + recordar);
 }
 
 function cerrarModalCarta() {
@@ -1176,7 +1144,6 @@ $('modalCarta').addEventListener('click', e => {
     });
   }
   if (on('abrirGmail')) return abrirEnGmail();
-  if (on('abrirThunderbird')) return abrirEnThunderbird();
   if (on('deshacerCartaEnviada')) return deshacerEnvio();
   if (on('abrirCartaCorreo')) {
     // Se descarga primero la carta (para que esté lista para adjuntar) y luego se abre el programa de correo.
