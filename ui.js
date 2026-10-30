@@ -1032,7 +1032,6 @@ $('ficha').addEventListener('click', e => {
   if (on('alternarActiva')) { const d = datos.find(x => x.fila === seleccion); return d && cambiarActivas([d.clave], !!d.inactiva); }
   if (on('prepararMensaje')) return abrirModalMensaje();
   if (on('verCarta')) return abrirModalCarta();
-  if (on('crearEnlace')) return crearEnlaceSubida();
   const ver = e.target.closest('[data-ver-doc]');
   if (ver) return verDocumento(ver.dataset.verDoc, ver.closest('.hist-fila').querySelector('b').textContent);
   if (on('copiarEnlace')) return copiarEnlace(false);
@@ -1420,10 +1419,7 @@ function pintarDocumentos(d, { documentos, paginaSubida }) {
       <input type="text" readonly value="${esc(enlaceNuevo.url)}" style="width:100%;margin:6px 0">
       <button class="btn-peq" id="copiarEnlace">Copiar enlace</button>
       <button class="sec btn-peq" id="copiarMensajeEnlace">Copiar mensaje con el enlace</button></div>` : '';
-  const crear = paginaSubida
-    ? `<button class="sec btn-peq" id="crearEnlace">🔗 ${documentos.length || hayEnlace ? 'Crear otro enlace de subida' : 'Crear enlace de subida sin enviar la carta'}</button>
-       <p class="sub" style="margin:6px 0 0">La postulante sube su carta firmada y la copia de su carnet desde ese enlace. Uno nuevo deja sin efecto el anterior.</p>`
-    : '<p class="sub">Falta configurar la dirección de la página de subida para poder crear enlaces.</p>';
+  const crear = paginaSubida ? '' : '<p class="sub">Falta configurar la dirección de la página de subida para poder crear enlaces.</p>';
   const pista = d.pendienteRevision ? '<p class="seguimiento" style="background:#e8f1fb;color:#0b57a4">📎 Estos documentos esperan revisión. Cuando los revises, marca el paso «Revisada por secretaría».</p>' : '';
   return pista + (filas || '<p class="sub" style="margin:0 0 8px">Todavía no ha subido documentos.</p>') + crear + caja;
 }
@@ -1450,16 +1446,6 @@ function cerrarDocumento() {
   if (urlDocumento) { URL.revokeObjectURL(urlDocumento); urlDocumento = null; }
 }
 $('modalDoc').addEventListener('click', e => { if (e.target === $('modalDoc') || e.target.closest('#cerrarDoc')) cerrarDocumento(); });
-
-async function crearEnlaceSubida() {
-  const d = fichaActual();
-  if (!d) return;
-  if (!d.correo) mostrar('Esta persona no tiene correo en la ficha: tendrás que hacerle llegar el enlace por otro medio.');
-  const r = await post('/api/enlace', { clave: d.clave });
-  if (r.error) return mostrar(r.error, true);
-  enlaceNuevo = { clave: d.clave, url: r.url, vence: r.vence_en };
-  cargarDocumentos(d);
-}
 
 async function copiarEnlace(conMensaje) {
   if (!enlaceNuevo) return;
