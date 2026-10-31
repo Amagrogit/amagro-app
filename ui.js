@@ -52,7 +52,7 @@ function cargar(resp, conservar) {
   // Comisiones: el filtro muestra siempre todas las de la lista, aunque no tengan integrantes todavía.
   const filtroComisionPrevio = $('filtroComision').value;
   const enComision = f => datos.filter(d => !d.duplicadaDe && !d.inactiva && d.comisiones.some(f)).length;
-  $('filtroComision').innerHTML = '<option value="">Comisiones: todas</option><option value="*">En alguna comisión (' + datos.filter(d => !d.duplicadaDe && !d.inactiva && d.comisiones.length).length + ')</option>'
+  $('filtroComision').innerHTML = '<option value="">Con o sin comisiones</option><option value="*">En alguna comisión (' + datos.filter(d => !d.duplicadaDe && !d.inactiva && d.comisiones.length).length + ')</option>'
     + '<option value="coord">Coordinadoras (' + enComision(c => c.rol === 'coordinadora') + ')</option>'
     + comisionesCatalogo.map(c => '<option value="' + esc(c.id) + '">' + esc(c.nombre) + (c.estatutaria ? ' (estatutaria)' : '') + ' (' + enComision(x => x.id === c.id) + ')</option>').join('');
   if ([...$('filtroComision').options].some(o => o.value === filtroComisionPrevio)) $('filtroComision').value = filtroComisionPrevio;
@@ -73,6 +73,16 @@ function cargar(resp, conservar) {
 
 let ultimosVisibles = [];
 const visiblesActuales = () => ultimosVisibles;
+// Con el filtro de comisiones activo, la fila dice el rol en la comisión: la coordinadora se ve de otro color, y al filtrar «Coordinadoras» se ve de qué comisión.
+function chipsComisionLista(d, fcom) {
+  if (!fcom) return '';
+  const coord = c => c.rol === 'coordinadora';
+  const chip = (c, texto) => `<span class="chip${coord(c) ? ' coord' : ''}" title="${esc(c.nombre + ' · ' + c.rol)}">${esc(texto)}</span>`;
+  if (fcom === 'coord') return d.comisiones.filter(coord).map(c => chip(c, 'Coordina · ' + c.nombre)).join('');
+  if (fcom === '*') return d.comisiones.map(c => chip(c, c.nombre + (coord(c) ? ' · coordinadora' : ''))).join('');
+  const c = d.comisiones.find(x => x.id === fcom);
+  return c ? chip(c, coord(c) ? '★ Coordinadora' : 'Integrante') : '';
+}
 function pintar() {
   const fc = $('filtroCargo').value, fcom = $('filtroComision').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
@@ -88,6 +98,10 @@ function pintar() {
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
   ultimosVisibles = vis;
+  if (!orden.dir && fcom && fcom !== '*' && fcom !== 'coord') {
+    const esCoord = d => (d.comisiones.find(c => c.id === fcom) || {}).rol === 'coordinadora';
+    vis.sort((a, b) => esCoord(b) - esCoord(a)); // el orden es estable: el resto queda como estaba
+  }
   // Orden: las filas sin dato quedan siempre al final, sea cual sea la dirección.
   if (orden.dir) {
     vis.sort((a, b) => {
@@ -118,7 +132,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
