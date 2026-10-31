@@ -526,7 +526,7 @@ function mapearColumnas(encabezados) {
 // solo tiene texto libre en "Gestión".
 const EDITABLES = ['nombre', 'rut', 'correo', 'nacimiento', 'telefono', 'region', 'comuna', 'direccion',
   'profesion', 'situacion', 'empresa', 'origen', 'resultado', 'modalidad', 'ingreso', 'citacion',
-  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva', 'fundadora', 'cargos', 'comisiones'];
+  'asistencia', 'observaciones', 'etapa', 'inscripcion', 'duplicada', 'inactiva', 'fundadora', 'cargos', 'comisiones', 'datos_pedidos'];
 
 // La clave identifica una postulación aunque cambie su posición en la planilla:
 // fecha y hora del envío + correo original (o RUT + nombre si la fila se agregó a mano).
@@ -544,7 +544,7 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
   const original = campo => (campo === 'observaciones' ? observacionesOriginales : crudo(campo));
   for (const campo of EDITABLES) {
     // 'duplicada' (clave de la postulación principal) no es una corrección de datos: se muestra aparte.
-    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || campo === 'fundadora' || campo === 'cargos' || campo === 'comisiones' || !(campo in ed)) continue;
+    if (campo === 'etapa' || campo === 'duplicada' || campo === 'inactiva' || campo === 'fundadora' || campo === 'cargos' || campo === 'comisiones' || campo === 'datos_pedidos' || !(campo in ed)) continue;
     if (String(ed[campo]).trim() !== String(original(campo)).trim()) {
       editados.push(campo); originales[campo] = original(campo);
     }
@@ -618,6 +618,8 @@ function procesarFila(fila, mapa, hoy, numero, ed = {}, pasos = {}) {
     clave: claveDe(fila, mapa),
     // «No activa»: la administración dejó de gestionar esta postulación (se oculta, no se borra). 'si' o vacío.
     inactiva: ed.inactiva === 'si',
+    // Fecha (aaaa-mm-dd) en que se envió el mensaje pidiéndole que confirme los datos con alerta; vacío si no se ha enviado.
+    datosPedidos: /^\d{4}-\d{2}-\d{2}$/.test(ed.datos_pedidos || '') ? ed.datos_pedidos : '',
     // Si alguien la marcó como duplicada de otra postulación, aquí va la clave de la principal (si no, vacío).
     duplicadaDe: typeof ed.duplicada === 'string' && ed.duplicada.trim() && ed.duplicada.trim() !== claveDe(fila, mapa) ? ed.duplicada.trim() : '',
     editados,
@@ -721,7 +723,7 @@ module.exports = { procesarCSV, mapearColumnas, EDITABLES };
 definir("lib/ediciones", function (module, exports, require, __dirname, Buffer) {
 const { EDITABLES } = require('./procesar');
 const { ETAPAS } = require('./etapas');
-const { validarPasosGuardados } = require('./pasos');
+const { validarPasosGuardados, fechaValida } = require('./pasos');
 const { validar: validarCargos } = require('./cargos');
 const { validar: validarComisiones } = require('./comisiones');
 
@@ -737,6 +739,7 @@ function validarCampos(cambios) {
   }
   if (limpios.etapa !== undefined && !ETAPAS.includes(limpios.etapa)) return { error: 'Etapa no reconocida.' };
   if (limpios.fundadora !== undefined && !['si', 'no'].includes(limpios.fundadora)) return { error: 'La condición de socia fundadora no es válida.' };
+  if (limpios.datos_pedidos !== undefined && !fechaValida(limpios.datos_pedidos)) return { error: 'La fecha de los datos pedidos no es válida.' };
   if (limpios.cargos !== undefined) {
     let lista;
     try { lista = JSON.parse(limpios.cargos); } catch { return { error: 'Los cargos no son válidos.' }; }
@@ -1600,7 +1603,7 @@ const { urlExportacion } = require('./hoja');
 const { REGIONES } = require('./normalizar');
 const { ETAPAS } = require('./etapas');
 const { validarCampos, validarRespaldo, avisoRespaldo } = require('./ediciones');
-const { PASOS, PLAZO_RESPUESTA_DIAS, validarPaso } = require('./pasos');
+const { PASOS, PLAZO_RESPUESTA_DIAS, validarPaso, hoyISO } = require('./pasos');
 const { ErrorSupabase } = require('./supabase');
 const { leerSocias, planificar, camposAAplicar } = require('./socias');
 const { camposConAlerta, evaluarPropuesta, valorActual } = require('./correcciones');
@@ -1983,6 +1986,19 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!registro.duplicadaDe) return fallo(400, 'Esa postulación no está marcada como duplicada.');
       await almacen.quitarCampo(registro.clave, 'duplicada');
+      return ok(await datosActuales());
+    }
+
+    // ---------- Datos pedidos ----------
+    // Anota que ya se le envió el mensaje pidiéndole confirmar los datos con alerta (el ⚠ de la lista pasa a azul). Se puede quitar.
+    if (ruta === 'POST /api/datos-pedidos') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { clave, pedidos } = a.cuerpo || {};
+      if (typeof pedidos !== 'boolean') return fallo(400, 'Dato inválido.');
+      const registro = await buscarRegistro(clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (pedidos) await almacen.editarCampos(registro.clave, { datos_pedidos: hoyISO() });
+      else await almacen.quitarCampo(registro.clave, 'datos_pedidos');
       return ok(await datosActuales());
     }
 

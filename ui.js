@@ -118,10 +118,10 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
-      <td>${d.alertas.length ? `<span class="chip mal" title="${esc(d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>` : '<span class="chip ok">OK</span>'}</td>
+      <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
     </tr>`).join('') : '<tr><td colspan="10" class="vacio">Sin resultados</td></tr>';
   actualizarSeleccion(vis);
 }
@@ -439,6 +439,16 @@ async function deshacerEnvio() {
   estadoCarta('Se quitó la marca de "Carta enviada" de la ficha.');
 }
 
+// ¿Hay algo que la propia persona pueda corregir y un correo al que escribirle? (para el botón «Pedir datos» de la lista)
+function puedePedirDatos(d) {
+  if (d.inactiva || d.duplicadaDe) return false;
+  const m = construirMensaje(d);
+  return !!(m.hayPuntos && m.destinatario);
+}
+// Si la ventana se abrió desde la lista (sin ficha abierta), al cerrarla se quita la selección de la fila.
+function soltarSeleccion() {
+  soltarSeleccion();
+}
 function abrirModalCarta(fila = seleccion) {
   const d = datos.find(x => x.fila === fila);
   if (d) seleccion = d.fila; // el envío anota el paso en la ficha que está seleccionada
@@ -525,7 +535,8 @@ function bloqueMensaje(d) {
       ? `<p class="sub" style="margin:8px 0 0">El correo registrado no es válido: hay que contactar a esta persona por teléfono${d.telefono ? ' (' + esc(d.telefono) + ')' : ''}.</p>`
       : '';
   }
-  return '<div style="margin-top:10px"><button class="sec btn-peq" id="prepararMensaje">✉ Preparar mensaje para la postulante</button></div>';
+  const pedidos = d.datosPedidos ? `<p class="sub" style="margin:8px 0 0">✉ Datos pedidos el ${esc(fechaCL(d.datosPedidos))}. <button class="enlace" id="quitarDatosPedidos">Quitar la marca</button></p>` : '';
+  return '<div style="margin-top:10px"><button class="sec btn-peq" id="prepararMensaje">' + (d.datosPedidos ? '↻ Volver a pedir los datos' : '✉ Preparar mensaje para la postulante') + '</button></div>' + pedidos;
 }
 
 // El mensaje se muestra en una ventana emergente, para no tener que desplazar la ficha.
@@ -538,9 +549,10 @@ function estadoModal(texto, error) {
   el.style.color = error ? 'var(--alerta)' : 'var(--verde)';
   if (texto && !error) temporizadorEstado = setTimeout(() => { el.textContent = ''; }, 6000);
 }
-function abrirModalMensaje() {
-  const d = datos.find(x => x.fila === seleccion);
+function abrirModalMensaje(fila = seleccion) {
+  const d = datos.find(x => x.fila === fila);
   if (!d) return;
+  seleccion = d.fila;
   const base = construirMensaje(d);
   const conEnlace = subidaDisponible && base.hayPuntos; // el enlace solo sirve si hay algo que la persona pueda corregir
   mensajeActual = conEnlace ? construirMensaje(d, true) : base;
@@ -560,6 +572,7 @@ function abrirModalMensaje() {
 function cerrarModalMensaje() {
   $('modalMensaje').hidden = true;
   mensajeActual = null;
+  soltarSeleccion();
 }
 
 async function copiarTexto(texto) {
@@ -788,10 +801,12 @@ function cerrarModalBienvenida() {
   $('vistaBv').src = 'about:blank';
   $('modalBienvenida').hidden = true;
   bvActual = null;
+  soltarSeleccion();
 }
-async function abrirModalBienvenida() {
-  const d = datos.find(x => x.fila === seleccion);
+async function abrirModalBienvenida(fila = seleccion) {
+  const d = datos.find(x => x.fila === fila);
   if (!d) return;
+  seleccion = d.fila; // el envío anota el paso en la ficha que está seleccionada
   const actual = bvActual = { d, correo: null, url: null, nombre: null, enlace: null };
   $('bvAvisos').innerHTML = '';
   $('bvPara').textContent = '—'; $('bvAsunto').textContent = ''; $('bvCuerpo').value = ''; $('bvSinCorreo').hidden = true;
@@ -861,6 +876,13 @@ $('bvGmail').addEventListener('click', async () => {
     if (r && bvActual === actual) { actual.d = datos.find(x => x.fila === seleccion) || actual.d; anotada = true; }
   } else anotada = true;
   if (bvActual !== actual) return;
+  if (anotada) {
+    // Listo: se cierran la carta y la ficha para pasar a la siguiente persona.
+    const nombre = actual.d.nombre;
+    cerrarModalBienvenida();
+    cerrarFicha();
+    return mostrar('✓ Se abrió Gmail con la bienvenida para ' + nombre + ' (' + actual.correo.destinatario + '). Revísala y pulsa Enviar allí. Quedó anotada como enviada en su ficha.');
+  }
   configurarRegistroBv();
   estadoBv('✓ Se abrió Gmail en otra pestaña con el mensaje listo, para ' + (actual.correo.destinatario || 'la socia') + '. Revisa y pulsa Enviar' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ').' : '.') + (anotada ? ' Quedó anotado como enviado en la ficha.' : ''));
 });
@@ -1018,11 +1040,14 @@ $('aplicarDuplicados').addEventListener('click', async () => {
 });
 
 $('filas').addEventListener('click', e => {
-  const enviar = e.target.closest('[data-enviar-carta]');
-  if (enviar) {
+  const desdeLista = e.target.closest('[data-enviar-carta], [data-enviar-bienvenida], [data-pedir-datos]');
+  if (desdeLista) {
     if (!puedeSalir()) return;
     editando = false;
-    abrirModalCarta(Number(enviar.dataset.enviarCarta));
+    const ds = desdeLista.dataset;
+    if (ds.enviarCarta) abrirModalCarta(Number(ds.enviarCarta));
+    else if (ds.enviarBienvenida) abrirModalBienvenida(Number(ds.enviarBienvenida));
+    else abrirModalMensaje(Number(ds.pedirDatos));
     pintar();
     return;
   }
@@ -1041,6 +1066,10 @@ $('ficha').addEventListener('click', e => {
   if (on('abrirBienvenida')) return abrirModalBienvenida();
   if (on('alternarActiva')) { const d = datos.find(x => x.fila === seleccion); return d && cambiarActivas([d.clave], !!d.inactiva); }
   if (on('prepararMensaje')) return abrirModalMensaje();
+  if (on('quitarDatosPedidos')) {
+    const d = datos.find(x => x.fila === seleccion);
+    return d && post('/api/datos-pedidos', { clave: d.clave, pedidos: false }).then(r => { if (r.error) return mostrar(r.error, true); cargar(r, true); mostrar('Se quitó la marca de datos pedidos.'); });
+  }
   if (on('verCarta')) return abrirModalCarta();
   const ver = e.target.closest('[data-ver-doc]');
   if (ver) return verDocumento(ver.dataset.verDoc, ver.closest('.hist-fila').querySelector('b').textContent);
@@ -1080,6 +1109,17 @@ $('modalMensaje').addEventListener('click', e => {
       if (cuerpo === null || mensajeActual !== actual) { if (ventana) ventana.close(); return; }
       if (!ventana) return estadoModal('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
       ventana.location.href = urlGmail({ destinatario: actual.destinatario, asunto: actual.asunto, cuerpo, cuenta: correoEnvio, copia: remitente });
+      if (!recordarDe(cuerpo)) {
+        // Se anota que se pidieron los datos (el ⚠ de la lista pasa a azul) y se cierran el mensaje y la ficha para pasar a la siguiente persona.
+        return post('/api/datos-pedidos', { clave: actual.d.clave, pedidos: true }).then(r => {
+          if (r.error) return estadoModal('Se abrió Gmail, pero no se pudo anotar que se pidieron los datos: ' + r.error, true);
+          const nombre = actual.d.nombre;
+          cargar(r, true);
+          cerrarModalMensaje();
+          cerrarFicha();
+          mostrar('✓ Se abrió Gmail con el mensaje para ' + nombre + ' (' + actual.destinatario + '). Revísalo y pulsa Enviar allí. Quedó anotado que se pidieron los datos.');
+        });
+      }
       estadoModal('✓ Se abrió Gmail en otra pestaña' + ((remitente || correoEnvio) ? ' (sale desde ' + (remitente || correoEnvio) + ')' : '') + '. Revisa y pulsa Enviar.' + recordarDe(cuerpo));
     });
   }
@@ -1878,6 +1918,7 @@ function lineaHistorial(h, conNombre) {
     if (k === 'fundadora') return v.despues === 'si' ? 'la marcó como socia fundadora' : 'quitó la condición de socia fundadora';
     if (k === 'cargos') return 'cambió los cargos: ' + (cargosTexto(v.antes) || 'sin cargos') + ' → ' + (cargosTexto(v.despues) || 'sin cargos');
     if (k === 'inactiva') return v.despues ? 'la marcó como no activa' : 'la volvió a activa';
+    if (k === 'datos_pedidos') return v.despues ? 'pidió que confirmara los datos con alerta (' + fechaCL(v.despues) + ')' : 'quitó la marca de datos pedidos';
     if (k === 'duplicada') return v.despues ? 'la marcó como duplicada de otra postulación' : 'quitó la marca de duplicada';
     if (h.accion === 'paso') return v.despues ? 'marcó «' + etiquetaPaso(k) + '» (' + textoValor(v.despues) + ')' : 'desmarcó «' + etiquetaPaso(k) + '»';
     return k + ': ' + textoValor(v.antes) + ' → ' + textoValor(v.despues);
