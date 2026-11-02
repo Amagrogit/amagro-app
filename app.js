@@ -1261,6 +1261,31 @@ class Almacen {
     await this.sesion.pedir('POST', 'configuracion?on_conflict=clave', { cuerpo: { clave: 'hoja_url', valor: url, actualizado: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
   }
 
+  // ---- Pagos de las socias. Los ven todos los que consultan; registrar y anular exige el permiso de pagos (lo exige la base) ----
+  async listarPagos() {
+    const todos = [];
+    for (let desde = 0; ; desde += PAGINA) {
+      const { datos } = await this.sesion.pedir('GET', `pagos?select=id,clave,fecha,monto,meses,desde,medio,operacion,nota,creado_en,creado_por,anulado_en,motivo_anulacion&order=fecha.desc,creado_en.desc&limit=${PAGINA}&offset=${desde}`);
+      todos.push(...(datos || []));
+      if (!datos || datos.length < PAGINA) break;
+    }
+    return todos;
+  }
+  async crearPago(p) {
+    const { datos } = await this.sesion.pedir('POST', 'pagos', { cuerpo: p, prefer: 'return=representation' });
+    return Array.isArray(datos) ? datos[0] : datos;
+  }
+  async anularPago(id, motivo) {
+    const { datos } = await this.sesion.pedir('PATCH', `pagos?id=eq.${filtro(id)}`, { cuerpo: { anulado_en: new Date().toISOString(), motivo_anulacion: motivo }, prefer: 'return=representation' });
+    if (!Array.isArray(datos) || datos.length !== 1) throw new ErrorSupabase('No se pudo anular: no tienes permiso o el pago no existe.', { estado: 403 });
+    return datos[0];
+  }
+  // Quiénes tienen el permiso de pagos (la lista de cuentas la lee la administradora).
+  async permisosPagos() {
+    const { datos } = await this.sesion.pedir('GET', 'perfiles?select=id,gestiona_pagos');
+    return new Map((Array.isArray(datos) ? datos : []).map(p => [p.id, !!p.gestiona_pagos]));
+  }
+
   // ---- Datos de pago (cuota y cuenta de AMAGRO): los lee el personal; solo la administradora los cambia (lo exige la base) ----
   async leerDatosPago() {
     const { datos } = await this.sesion.pedir('GET', 'configuracion?select=valor&clave=eq.datos_pago');
@@ -1463,10 +1488,12 @@ class Sesion {
 
   // ---------- Estado ----------
   get activa() { return !!(this.tokens && this.usuario); }
-  get publico() { return this.activa ? { id: this.usuario.id, correo: this.usuario.correo, nombre: this.usuario.nombre, rol: this.usuario.rol, cambiarClave: !!this.usuario.cambiarClave } : null; }
+  get publico() { return this.activa ? { id: this.usuario.id, correo: this.usuario.correo, nombre: this.usuario.nombre, rol: this.usuario.rol, cambiarClave: !!this.usuario.cambiarClave, gestionaPagos: this.puedePagos() } : null; }
   tieneAcceso() { return this.activa && ROLES_CON_ACCESO.includes(this.usuario.rol); }
   puedeEditar() { return this.activa && ROLES_QUE_EDITAN.includes(this.usuario.rol); }
   esAdmin() { return this.activa && this.usuario.rol === 'admin'; }
+  // Registrar y anular pagos: el personal que tenga el permiso aparte (la base de datos lo vuelve a exigir).
+  puedePagos() { return this.activa && ROLES_QUE_EDITAN.includes(this.usuario.rol) && !!this.usuario.gestionaPagos; }
 
   // ---------- Persistencia (solo el código de renovación, nunca la contraseña) ----------
   _guardar() {
@@ -1502,7 +1529,7 @@ class Sesion {
   }
 
   async _cargarPerfil() {
-    const r = await this._http('GET', '/rest/v1/perfiles?select=id,nombre,rol,activo,cambiar_clave&id=eq.' + encodeURIComponent(this._uid), { acceso: this.tokens.acceso });
+    const r = await this._http('GET', '/rest/v1/perfiles?select=id,nombre,rol,activo,cambiar_clave,gestiona_pagos&id=eq.' + encodeURIComponent(this._uid), { acceso: this.tokens.acceso });
     if (!r.ok) throw new ErrorSupabase(traducir(r.estado, r.datos), { estado: r.estado });
     const p = Array.isArray(r.datos) && r.datos[0];
     return p && p.activo !== false ? p : null;
@@ -1516,7 +1543,7 @@ class Sesion {
       this._olvidar();
       throw new ErrorSupabase('Tu cuenta existe pero no tiene un perfil activo en AMAGRO. Pide a la administradora que la habilite.', { estado: 403, sesion: true });
     }
-    this.usuario = { id: p.id, correo: (d.user && d.user.email) || correo, nombre: p.nombre, rol: p.rol, cambiarClave: !!p.cambiar_clave };
+    this.usuario = { id: p.id, correo: (d.user && d.user.email) || correo, nombre: p.nombre, rol: p.rol, cambiarClave: !!p.cambiar_clave, gestionaPagos: !!p.gestiona_pagos };
     this._guardar();
   }
 
@@ -1621,6 +1648,7 @@ const noAceptacion = require('./cartaNoAceptacion');
 const bienvenida = require('./cartaBienvenida');
 const CM = require('./comisiones');
 const PAGO = require('./pago');
+const PG = require('./pagos');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1643,7 +1671,7 @@ const PAGO = require('./pago');
 const NO_ENCONTRADA = 'No se encontró a esa postulante. Actualiza la planilla e inténtalo de nuevo.';
 const ROLES_VALIDOS = ['admin', 'secretaria', 'directiva'];
 // Lo único que puede hacer la categoría Directiva (consultar).
-const SOLO_CONSULTA = new Set(['GET /api/postulaciones', 'GET /api/historial', 'GET /api/documentos', 'GET /api/documento/ver', 'POST /api/carta', 'GET /api/correo/info', 'POST /api/mi-clave']);
+const SOLO_CONSULTA = new Set(['GET /api/pagos', 'GET /api/pagos/historial', 'GET /api/postulaciones', 'GET /api/historial', 'GET /api/documentos', 'GET /api/documento/ver', 'POST /api/carta', 'GET /api/correo/info', 'POST /api/mi-clave']);
 
 // Cada entrada de las ediciones: { campos: {correcciones}, pasos?: {pasos de admisión}, modificado }.
 const soloCampos = ed => Object.fromEntries(Object.entries(ed).map(([k, v]) => [k, v.campos || {}]));
@@ -1717,6 +1745,33 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     };
   }
   const datosActuales = async () => respuestaDatos(await leerOrigen());
+  // Pagos: a las socias y a las aprobadas se les controla la cuota (reglas en lib/pagos.js).
+  const ETAPAS_EN_CONTROL = ['Socia', 'Aprobada'];
+  const armarPagos = async () => {
+    const hoy = new Date();
+    const [{ registros }, pagos] = await Promise.all([datosActuales(), almacen.listarPagos()]);
+    const porClave = new Map();
+    for (const p of pagos) { if (!porClave.has(p.clave)) porClave.set(p.clave, []); porClave.get(p.clave).push(p); }
+    const mes = PG.mesDe(hoy);
+    const filas = registros.filter(r => ETAPAS_EN_CONTROL.includes(r.etapa) && !r.inactiva && !r.duplicadaDe).map(r => {
+      const suyos = porClave.get(r.clave) || [];
+      const e = PG.estadoSocia({ pagos: suyos, aprobadaMes: r.pasos && r.pasos.aprobada ? String(r.pasos.aprobada.fecha).slice(0, 7) : '', hoy });
+      const ultimo = suyos.find(p => !p.anulado_en); // vienen ordenados: lo más reciente primero
+      return {
+        clave: r.clave, nombre: r.nombre, rut: r.rut, correo: r.correo, etapa: r.etapa, region: r.region, modalidad: r.modalidad,
+        estado: e.estado, inicio: e.inicio, pagadoHasta: e.pagadoHasta, mesesDebidos: e.mesesDebidos, montoReferencia: e.montoReferencia, proximoDesde: e.proximoDesde,
+        ultimoPago: ultimo ? { fecha: ultimo.fecha, monto: ultimo.monto, meses: ultimo.meses, desde: String(ultimo.desde).slice(0, 7), medio: ultimo.medio } : null,
+      };
+    });
+    const cuenta = estado => filas.filter(f => f.estado === estado).length;
+    const resumen = {
+      total: filas.length, alDia: cuenta('al-dia'), pendientes: cuenta('pendiente'), atrasadas: cuenta('atrasada'),
+      esperado: filas.reduce((s, f) => s + f.montoReferencia, 0),
+      recaudadoMes: pagos.filter(p => !p.anulado_en && String(p.fecha).startsWith(mes)).reduce((s, p) => s + p.monto, 0),
+    };
+    return { hoy: PG.hoyISO(hoy), mesActual: mes, inicio: PG.INICIO, cuotaReferencia: PG.CUOTA_REFERENCIA, medios: PG.MEDIOS, puedeRegistrar: sesion.puedePagos(), filas, resumen };
+  };
+
   // Los datos de pago salen de la configuración de la base; si faltan o no se pueden leer, la carta sale sin ellos (y lo avisa).
   const datosPago = async () => PAGO.leer(await almacen.leerDatosPago().catch(() => null));
   const buscarRegistro = async clave => typeof clave === 'string' && (await datosActuales()).registros.find(r => r.clave === clave);
@@ -1766,7 +1821,10 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     // ---------- Cuentas de usuarias: solo la administradora ----------
     if (url.startsWith('/api/usuarios')) {
       if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede administrar usuarias.');
-      if (ruta === 'GET /api/usuarios') return ok(await almacen.usuarios());
+      if (ruta === 'GET /api/usuarios') {
+        const [lista, permisos] = await Promise.all([almacen.usuarios(), almacen.permisosPagos().catch(() => new Map())]);
+        return ok({ ...lista, usuarios: (lista.usuarios || []).map(u => ({ ...u, gestionaPagos: !!permisos.get(u.id) })) });
+      }
       if (ruta === 'GET /api/usuarios/registro') return ok({ registro: await almacen.registroCuentas() });
       const a = analizar(cuerpo); if (a.error) return a.error;
       const c = a.cuerpo || {};
@@ -1776,6 +1834,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
         const cambios = {};
         if (c.rol !== undefined) { if (!ROLES_VALIDOS.includes(c.rol)) return fallo(400, 'La categoría no es válida.'); cambios.rol = c.rol; }
         if (c.activo !== undefined) { if (typeof c.activo !== 'boolean') return fallo(400, 'Dato inválido.'); cambios.activo = c.activo; }
+        if (c.gestionaPagos !== undefined) { if (typeof c.gestionaPagos !== 'boolean') return fallo(400, 'Dato inválido.'); cambios.gestiona_pagos = c.gestionaPagos; }
         if (c.nombre !== undefined) { const n = String(c.nombre).replace(/\s+/g, ' ').trim(); if (n.length < 2 || n.length > 120) return fallo(400, 'El nombre debe tener entre 2 y 120 letras.'); cambios.nombre = n; }
         if (typeof c.id !== 'string' || !/^[0-9a-f-]{36}$/.test(c.id) || !Object.keys(cambios).length) return fallo(400, 'Datos inválidos.');
         await almacen.cambiarPerfil(c.id, cambios);
@@ -2137,6 +2196,34 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (ruta.startsWith('GET')) return ok({ ...noAceptacion.correo(registro), carnetPendiente: !!(registro.docs && registro.docs.carnet) });
       return { estado: 200, bytes: await noAceptacion.generar(registro, { logo: await E.logo() }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': 'attachment; filename="' + noAceptacion.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
+    }
+
+    // ---------- Pagos de las socias ----------
+    // Los ven todos los que consultan; registrar y anular exige el permiso de pagos (que la base de datos vuelve a exigir).
+    if (ruta === 'GET /api/pagos') return ok(await armarPagos());
+    if (ruta === 'GET /api/pagos/historial') {
+      const clave = consulta.get('clave');
+      if (typeof clave !== 'string' || !clave) return fallo(400, 'Falta indicar la socia.');
+      return ok({ pagos: (await almacen.listarPagos()).filter(p => p.clave === clave) });
+    }
+    if (ruta === 'POST /api/pagos/registrar') {
+      if (!sesion.puedePagos()) return fallo(403, 'Solo quienes tienen el permiso de pagos pueden registrar o anular pagos.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const v = PG.validarPago(a.cuerpo);
+      if (v.error) return fallo(400, v.error);
+      if (!(await buscarRegistro(v.limpio.clave))) return fallo(404, NO_ENCONTRADA);
+      await almacen.crearPago(v.limpio);
+      return ok(await armarPagos());
+    }
+    if (ruta === 'POST /api/pagos/anular') {
+      if (!sesion.puedePagos()) return fallo(403, 'Solo quienes tienen el permiso de pagos pueden registrar o anular pagos.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { id, motivo } = a.cuerpo || {};
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Pago inválido.');
+      const m = typeof motivo === 'string' ? motivo.replace(/\s+/g, ' ').trim() : '';
+      if (m.length < 3 || m.length > 300) return fallo(400, 'Escribe el motivo de la anulación (entre 3 y 300 letras).');
+      await almacen.anularPago(id, m);
+      return ok(await armarPagos());
     }
 
     // ---------- Datos de pago (cuota y cuenta de AMAGRO) ----------
@@ -2868,6 +2955,94 @@ function leer(valor) {
 }
 
 module.exports = { CLAVE, TIPOS_CUENTA, validar, leer };
+
+});
+
+definir("lib/pagos", function (module, exports, require, __dirname, Buffer) {
+// Control de pagos de las socias: la cuota vence el día 1 de cada mes y cada pago cubre uno o más meses.
+// Todo el cálculo vive aquí (sin acceso a la base ni a la pantalla) para poder probarlo.
+//   - Un pago cubre «meses» meses a partir de «desde» (un mes: 10.000; tres: 30.000; doce: 120.000). El monto es libre.
+//   - El control parte en INICIO (noviembre de 2026): lo anterior no se controla. Quien se aprueba después, parte en el mes de su aprobación.
+//   - Al día: tiene cubiertos todos los meses hasta el actual. Pendiente: solo le falta el mes en curso (desde el día 1, sin plazo).
+//     Atrasada: le falta algún mes anterior.
+//   - Los pagos no se borran: se anulan (con motivo) y dejan de contar.
+
+const INICIO = '2026-11';          // primer mes que se controla
+const CUOTA_REFERENCIA = 10000;    // lo que vale un mes, solo para calcular cuánto debería; cada pago anota su monto real
+const MEDIOS = ['transferencia', 'efectivo', 'flow', 'otro'];
+const MAX_MESES = 120;
+const MAX_MONTO = 100000000;
+
+const doble = n => String(n).padStart(2, '0');
+const esMes = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+
+// 'aaaa-mm' de una fecha (texto 'aaaa-mm-dd' o Date en hora local).
+function mesDe(f) {
+  if (f instanceof Date) return `${f.getFullYear()}-${doble(f.getMonth() + 1)}`;
+  return String(f || '').slice(0, 7);
+}
+function sumarMeses(m, n) {
+  const idx = Number(m.slice(0, 4)) * 12 + (Number(m.slice(5, 7)) - 1) + n;
+  return `${Math.floor(idx / 12)}-${doble((idx % 12) + 1)}`;
+}
+const mayor = (a, b) => (a >= b ? a : b); // sirve con 'aaaa-mm' porque ordena igual que las fechas
+const rango = (desde, hasta) => {
+  const l = [];
+  for (let m = desde; m <= hasta && l.length < 2400; m = sumarMeses(m, 1)) l.push(m);
+  return l;
+};
+const fechaValida = s => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+  if (!m) return false;
+  const f = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return +m[1] >= 2000 && +m[1] <= 2100 && f.getUTCFullYear() === +m[1] && f.getUTCMonth() === +m[2] - 1 && f.getUTCDate() === +m[3];
+};
+const hoyISO = (ahora = new Date()) => `${ahora.getFullYear()}-${doble(ahora.getMonth() + 1)}-${doble(ahora.getDate())}`;
+const textoLimpio = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+
+// Valida un pago que llega de la pantalla. Devuelve { limpio } o { error }.
+// «desde» es el primer mes cubierto ('aaaa-mm' o 'aaaa-mm-01'); se guarda como el día 1 de ese mes.
+function validarPago(e, ahora = new Date()) {
+  if (!e || typeof e !== 'object' || Array.isArray(e)) return { error: 'El pago no es válido.' };
+  if (typeof e.clave !== 'string' || !e.clave || e.clave.length > 300) return { error: 'Falta indicar a quién corresponde el pago.' };
+  const fecha = e.fecha === undefined || e.fecha === '' ? hoyISO(ahora) : e.fecha;
+  if (!fechaValida(fecha)) return { error: 'La fecha del pago no es válida.' };
+  const manana = new Date(ahora.getTime() + 864e5);
+  if (fecha > hoyISO(manana)) return { error: 'La fecha del pago no puede ser futura.' };
+  const monto = Number(e.monto);
+  if (!Number.isInteger(monto) || monto < 1 || monto > MAX_MONTO) return { error: 'El monto debe ser un número entero de pesos, mayor que cero.' };
+  const meses = Number(e.meses);
+  if (!Number.isInteger(meses) || meses < 1 || meses > MAX_MESES) return { error: `Los meses que cubre el pago deben ser entre 1 y ${MAX_MESES}.` };
+  const desde = String(e.desde || '').slice(0, 7);
+  if (!esMes(desde)) return { error: 'El primer mes que cubre el pago no es válido.' };
+  if (desde < '2000-01' || desde > '2100-12') return { error: 'El primer mes que cubre el pago no es válido.' };
+  const medio = e.medio === undefined || e.medio === '' ? 'transferencia' : e.medio;
+  if (!MEDIOS.includes(medio)) return { error: 'El medio de pago no es válido.' };
+  const operacion = textoLimpio(e.operacion, 60);
+  const nota = textoLimpio(e.nota, 300);
+  return { limpio: { clave: e.clave, fecha, monto, meses, desde: desde + '-01', medio, operacion, nota } };
+}
+
+// Meses que cubre un pago (lista de 'aaaa-mm').
+const mesesDelPago = p => rango(mesDe(p.desde), sumarMeses(mesDe(p.desde), p.meses - 1));
+
+// Estado de una socia. pagos: los suyos (se ignoran los anulados). aprobadaMes: 'aaaa-mm' de su aprobación, si se conoce.
+function estadoSocia({ pagos = [], aprobadaMes = '', hoy = new Date() } = {}) {
+  const actual = mesDe(hoy);
+  const inicio = esMes(aprobadaMes) ? mayor(INICIO, aprobadaMes) : INICIO;
+  const cubiertos = new Set();
+  for (const p of pagos) if (!p.anulado_en) mesesDelPago(p).forEach(m => cubiertos.add(m));
+  const debidos = actual < inicio ? [] : rango(inicio, actual).filter(m => !cubiertos.has(m));
+  // «pagado hasta»: el último mes cubierto sin huecos desde el inicio (null si no tiene cubierto ni el primero)
+  let hasta = null;
+  for (let m = inicio; cubiertos.has(m); m = sumarMeses(m, 1)) hasta = m;
+  let proximo = inicio;
+  while (cubiertos.has(proximo)) proximo = sumarMeses(proximo, 1);
+  const estado = !debidos.length ? 'al-dia' : debidos.length === 1 && debidos[0] === actual ? 'pendiente' : 'atrasada';
+  return { estado, inicio, pagadoHasta: hasta, mesesDebidos: debidos.length, debidos, montoReferencia: debidos.length * CUOTA_REFERENCIA, proximoDesde: proximo };
+}
+
+module.exports = { INICIO, CUOTA_REFERENCIA, MEDIOS, MAX_MESES, esMes, mesDe, sumarMeses, rango, fechaValida, hoyISO, validarPago, mesesDelPago, estadoSocia };
 
 });
 

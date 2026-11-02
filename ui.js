@@ -1841,9 +1841,10 @@ async function cargarUsuarias() {
   const j = await r.json().catch(() => ({ error: 'No se pudo leer la lista.' }));
   if (!r.ok) { caja.textContent = j.error || 'No se pudo leer la lista.'; return; }
   cuentasExistentes = j.usuarios;
-  caja.innerHTML = '<table class="tabla-usuarias"><thead><tr><th>Nombre</th><th>Correo</th><th>Categoría</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>' +
+  caja.innerHTML = '<table class="tabla-usuarias"><thead><tr><th>Nombre</th><th>Correo</th><th>Categoría</th><th>Registra pagos</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>' +
     j.usuarios.map(u => '<tr data-usuaria="' + esc(u.id) + '"><td>' + esc(u.nombre) + (u.cambiarClave ? ' <span class="chip" title="Aún no cambia su contraseña temporal">clave temporal</span>' : '') + '</td><td>' + esc(u.correo) + '</td>' +
       '<td><select data-usuaria-rol data-previo="' + esc(u.rol) + '">' + Object.entries(NOMBRE_ROL).map(([k, v]) => '<option value="' + k + '"' + (k === u.rol ? ' selected' : '') + '>' + v + '</option>').join('') + '</select></td>' +
+      '<td><label title="Puede registrar y anular pagos. Sin esto, solo ve la pantalla de pagos."><input type="checkbox" data-usuaria-pagos' + (u.gestionaPagos ? ' checked' : '') + (u.activo && u.rol !== 'directiva' ? '' : ' disabled') + '> sí</label></td>' +
       '<td>' + (u.activo ? 'Activa' : '<b style="color:var(--alerta)">Desactivada</b>') + ' <button class="sec btn-peq" data-usuaria-activo="' + (u.activo ? '0' : '1') + '">' + (u.activo ? 'Desactivar' : 'Activar') + '</button></td>' +
       '<td>' + (u.ultimoIngreso ? esc(fechaHoraCL(u.ultimoIngreso)) : '<span class="sub">nunca</span>') + '</td>' +
       '<td><button class="sec btn-peq" data-usuaria-clave>Restablecer contraseña</button></td></tr>').join('') + '</tbody></table>' +
@@ -1884,6 +1885,16 @@ $('formNuevaUsuaria').addEventListener('submit', async e => {
   await cargarUsuarias();
 });
 $('usuariasLista').addEventListener('change', async e => {
+  const chk = e.target.closest('[data-usuaria-pagos]');
+  if (chk) {
+    const fila = chk.closest('[data-usuaria]'), nombre = fila.children[0].firstChild.textContent.trim(), dar = chk.checked;
+    if (!confirm((dar ? '¿Dar a ' + nombre + ' el permiso para registrar y anular pagos?' : '¿Quitarle a ' + nombre + ' el permiso para registrar y anular pagos? Seguirá pudiendo verlos.') + '\n\nSe aplica de inmediato y queda registrado.')) { chk.checked = !dar; return; }
+    chk.disabled = true;
+    const r = await post('/api/usuarios/perfil', { id: fila.dataset.usuaria, gestionaPagos: dar });
+    if (r.error) mostrar(r.error, true); else mostrar(dar ? nombre + ' ya puede registrar pagos.' : nombre + ' ahora solo ve los pagos.');
+    await cargarUsuarias();
+    return;
+  }
   const sel = e.target.closest('[data-usuaria-rol]'); if (!sel) return;
   const fila = sel.closest('[data-usuaria]'), id = fila.dataset.usuaria;
   const nombre = fila.children[0].firstChild.textContent.trim();
@@ -1896,7 +1907,7 @@ $('usuariasLista').addEventListener('change', async e => {
   if (r.error) mostrar(r.error, true); else mostrar('Categoría de ' + nombre + ' cambiada a ' + NOMBRE_ROL[ahora] + '.');
   await cargarUsuarias();
 });
-const ETIQUETA_CUENTA = { crear: 'creó la cuenta de', categoria: 'cambió la categoría de', activar: 'activó la cuenta de', desactivar: 'desactivó la cuenta de', nombre: 'cambió el nombre de', clave: 'restableció la contraseña de' };
+const ETIQUETA_CUENTA = { crear: 'creó la cuenta de', categoria: 'cambió la categoría de', activar: 'activó la cuenta de', desactivar: 'desactivó la cuenta de', nombre: 'cambió el nombre de', clave: 'restableció la contraseña de', pagos: 'cambió el permiso de pagos de' };
 async function cargarRegistroCuentas() {
   const caja = $('registroCuentas');
   try {
@@ -1907,7 +1918,8 @@ async function cargarRegistroCuentas() {
       const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
       const extra = h.accion === 'categoria' ? ' (' + (NOMBRE_ROL[d.antes] || d.antes) + ' → ' + (NOMBRE_ROL[d.despues] || d.despues) + ')'
         : h.accion === 'crear' ? ' (' + (NOMBRE_ROL[d.rol] || d.rol || '') + ')'
-        : h.accion === 'nombre' ? ' (antes: ' + (d.antes || '') + ')' : '';
+        : h.accion === 'nombre' ? ' (antes: ' + (d.antes || '') + ')'
+        : h.accion === 'pagos' ? (d.despues ? ' (ahora puede registrar pagos)' : ' (ahora solo ve los pagos)') : '';
       return '<div class="hist-fila"><span class="quien">' + esc(h.usuario_nombre || 'Alguien') + '</span> · ' + esc(cuando) + '<br>' + esc(ETIQUETA_CUENTA[h.accion] || h.accion) + ' <b>' + esc(h.objetivo_nombre || '') + '</b>' + esc(extra) + '</div>';
     }).join('') : 'Todavía no hay movimientos registrados.';
   } catch { caja.textContent = 'No se pudo cargar el registro.'; }
@@ -1931,6 +1943,190 @@ $('usuariasLista').addEventListener('click', async e => {
   }
 });
 
+// ---- Pagos de las socias ----
+// La pantalla de pagos muestra solo a las socias y las aprobadas, con el estado de su cuota (las reglas viven en lib/pagos.js y las calcula la API).
+// Registrar y anular lo permite la API solo a quienes tienen el permiso de pagos; aquí solo se esconden los botones.
+let pagos = null;          // lo último que respondió /api/pagos
+let pagosSocia = null;     // { clave, lista } de la ventana abierta
+const NOMBRES_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const nombreMes = m => (m ? NOMBRES_MES[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4) : '—');
+const mesMas = (m, n) => { const i = Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1 + n; return Math.floor(i / 12) + '-' + String((i % 12) + 1).padStart(2, '0'); };
+const cubrePago = (desde, meses) => nombreMes(desde.slice(0, 7)) + (meses > 1 ? ' a ' + nombreMes(mesMas(desde.slice(0, 7), meses - 1)) : '');
+const MEDIOS_ROTULO = { transferencia: 'Transferencia', efectivo: 'Efectivo', flow: 'Flow', otro: 'Otro' };
+function chipEstadoPago(f) {
+  if (f.estado === 'al-dia') return '<span class="chip ok">Al día</span>';
+  if (f.estado === 'pendiente') return '<span class="chip pend" title="Le toca la cuota de este mes">Pendiente</span>';
+  return '<span class="chip mal" title="Debe ' + f.mesesDebidos + (f.mesesDebidos === 1 ? ' mes' : ' meses') + '">Atrasada · ' + f.mesesDebidos + (f.mesesDebidos === 1 ? ' mes' : ' meses') + '</span>';
+}
+function abrirPantallaPagos() {
+  cerrarFicha();
+  cerrarPaneles();
+  $('vistaLista').hidden = true;
+  $('pantallaPagos').hidden = false;
+  $('verPagos').textContent = '← Postulaciones';
+  $('verPagos').title = 'Volver al listado de postulaciones';
+  $('pagosRegion').innerHTML = '<option value="">Todas las regiones</option>' + regiones.map(r => '<option>' + esc(r) + '</option>').join('');
+  cargarPagos();
+}
+function cerrarPantallaPagos() {
+  $('pantallaPagos').hidden = true;
+  $('vistaLista').hidden = false;
+  $('verPagos').textContent = '💰 Pagos';
+  $('verPagos').title = 'Pantalla de pagos de las socias: quién está al día, quién debe y cuánto';
+}
+async function cargarPagos() {
+  $('pagosNota').textContent = 'Cargando…';
+  const r = await (await fetch('/api/pagos')).json().catch(() => ({ error: 'No se pudieron cargar los pagos.' }));
+  if (r.error) { $('pagosNota').textContent = r.error; return; }
+  pagos = r;
+  pintarPagos();
+}
+function pintarPagos() {
+  if (!pagos) return;
+  const q = $('pagosBuscar').value.toLowerCase(), est = $('pagosEstado').value, reg = $('pagosRegion').value;
+  const rango = { atrasada: 0, pendiente: 1, 'al-dia': 2 };
+  const vis = pagos.filas
+    .filter(f => (!q || [f.nombre, f.rut].join(' ').toLowerCase().includes(q)) && (!est || f.estado === est) && (!reg || f.region === reg))
+    .sort((a, b) => rango[a.estado] - rango[b.estado] || b.mesesDebidos - a.mesesDebidos || a.nombre.localeCompare(b.nombre, 'es'));
+  const s = pagos.resumen;
+  $('pagosNota').textContent = 'El control parte en ' + nombreMes(pagos.inicio) + ': lo anterior no se controla. La cuota vence el día 1 de cada mes (referencia: ' + dinero(pagos.cuotaReferencia) + ' por mes; cada pago anota su monto real). ' + (pagos.puedeRegistrar ? '' : 'Tú solo puedes ver los pagos.');
+  $('pagosResumen').innerHTML =
+    '<div class="tarjeta"><div class="n">' + s.total + '</div>socias y aprobadas</div>' +
+    '<div class="tarjeta bien"><div class="n">' + s.alDia + '</div>al día</div>' +
+    '<div class="tarjeta"><div class="n">' + s.pendientes + '</div>pendientes este mes</div>' +
+    '<div class="tarjeta mal"><div class="n">' + s.atrasadas + '</div>atrasadas</div>' +
+    '<div class="tarjeta"><div class="n">' + dinero(s.recaudadoMes) + '</div>recaudado este mes</div>' +
+    '<div class="tarjeta"><div class="n">' + dinero(s.esperado) + '</div>por cobrar (referencia)</div>';
+  $('pagosFilas').innerHTML = vis.length ? vis.map(f => `
+    <tr>
+      <td><button class="enlace corto-b" data-pagos-socia="${esc(f.clave)}" title="Ver sus pagos">${esc(f.nombre) || '(sin nombre)'}</button></td>
+      <td class="fecha">${esc(f.rut)}</td>
+      <td>${esc(f.region)}</td>
+      <td><span class="chip ${claseEtapa(f.etapa)}">${esc(f.etapa)}</span></td>
+      <td>${esc(f.modalidad) || '<span class="nada">—</span>'}</td>
+      <td>${f.pagadoHasta ? esc(nombreMes(f.pagadoHasta)) : '<span class="nada">—</span>'}</td>
+      <td>${chipEstadoPago(f)}</td>
+      <td>${f.ultimoPago ? esc(dinero(f.ultimoPago.monto)) + '<small class="corto corto-reg">' + esc(fechaCL(f.ultimoPago.fecha)) + ' · ' + esc(cubrePago(f.ultimoPago.desde, f.ultimoPago.meses)) + '</small>' : '<span class="nada">—</span>'}</td>
+      <td>${pagos.puedeRegistrar ? '<button class="btn-peq" data-pagos-registrar="' + esc(f.clave) + '">Registrar pago</button>' : ''}</td>
+    </tr>`).join('') : '<tr><td colspan="9" class="vacio">Sin resultados</td></tr>';
+}
+['pagosBuscar', 'pagosEstado', 'pagosRegion'].forEach(id => $(id).addEventListener('input', pintarPagos));
+$('verPagos').addEventListener('click', () => ($('pantallaPagos').hidden ? abrirPantallaPagos() : cerrarPantallaPagos()));
+$('pagosFilas').addEventListener('click', e => {
+  const ver = e.target.closest('[data-pagos-socia]'), reg = e.target.closest('[data-pagos-registrar]');
+  if (ver) abrirPagosSocia(ver.dataset.pagosSocia);
+  else if (reg) abrirPagosSocia(reg.dataset.pagosRegistrar, true);
+});
+$('pagosCsv').addEventListener('click', () => {
+  if (!pagos) return;
+  const filas = [['nombre', 'rut', 'correo', 'region', 'etapa', 'modalidad', 'estado', 'pagado_hasta', 'meses_debidos', 'monto_referencia', 'ultimo_pago_fecha', 'ultimo_pago_monto', 'ultimo_pago_cubre'].map(celdaCsv),
+    ...pagos.filas.map(f => [f.nombre, f.rut, f.correo, f.region, f.etapa, f.modalidad, f.estado, f.pagadoHasta || '', f.mesesDebidos, f.montoReferencia, f.ultimoPago ? f.ultimoPago.fecha : '', f.ultimoPago ? f.ultimoPago.monto : '', f.ultimoPago ? cubrePago(f.ultimoPago.desde, f.ultimoPago.meses) : ''].map(celdaCsv))];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + filas.map(f => f.join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'pagos_socias_' + pagos.hoy + '.csv'; a.click();
+});
+
+// Ventana de una socia: su estado, sus pagos y (con permiso) el formulario para registrar uno nuevo.
+async function abrirPagosSocia(clave, enfocarFormulario = false) {
+  const f = pagos.filas.find(x => x.clave === clave);
+  if (!f) return;
+  pagosSocia = { clave, lista: [] };
+  $('pagosModalTitulo').textContent = 'Pagos · ' + f.nombre;
+  $('pagosModalCuerpo').textContent = 'Cargando…';
+  $('modalPagos').hidden = false;
+  const r = await (await fetch('/api/pagos/historial?clave=' + encodeURIComponent(clave))).json().catch(() => ({ error: 'No se pudieron cargar los pagos.' }));
+  if (r.error) { $('pagosModalCuerpo').textContent = r.error; return; }
+  pagosSocia.lista = r.pagos || [];
+  pintarModalPagos();
+  if (enfocarFormulario && $('ppMonto')) $('ppMonto').focus();
+}
+function pintarModalPagos() {
+  const f = pagos.filas.find(x => x.clave === pagosSocia.clave);
+  if (!f) { $('modalPagos').hidden = true; return; }
+  const filas = pagosSocia.lista.map(p => `<tr${p.anulado_en ? ' style="opacity:.6"' : ''}>
+      <td>${esc(fechaCL(p.fecha))}</td><td>${esc(dinero(p.monto))}</td><td>${esc(cubrePago(p.desde, p.meses))}</td>
+      <td>${esc(MEDIOS_ROTULO[p.medio] || p.medio)}${p.operacion ? '<br><small>N° ' + esc(p.operacion) + '</small>' : ''}${p.nota ? '<br><small>' + esc(p.nota) + '</small>' : ''}</td>
+      <td>${p.anulado_en ? '<span class="chip mal">Anulado</span><br><small>' + esc(p.motivo_anulacion || '') + '</small>' : '<span class="chip ok">Vigente</span>'}</td>
+      <td>${!p.anulado_en && pagos.puedeRegistrar ? '<button class="sec btn-peq" data-anular-pago="' + esc(p.id) + '">Anular</button>' : ''}</td></tr>`).join('');
+  const formulario = pagos.puedeRegistrar ? `
+    <h3 style="margin:14px 0 4px">Registrar un pago</h3>
+    <form id="formPagoSocia" autocomplete="off">
+      <div class="pagos-form">
+        <label>Fecha del pago<br><input type="date" id="ppFecha" required value="${esc(hoyLocalISO())}" max="${esc(hoyLocalISO())}"></label>
+        <label>Meses que cubre<br><input type="number" id="ppMeses" required min="1" max="120" step="1" value="1"></label>
+        <label>Desde el mes<br><input type="month" id="ppDesde" required value="${esc(f.proximoDesde)}"></label>
+        <label>Monto pagado ($)<br><input type="number" id="ppMonto" required min="1" step="1" value="${pagos.cuotaReferencia}"></label>
+        <label>Medio<br><select id="ppMedio">${pagos.medios.map(m => '<option value="' + m + '">' + esc(MEDIOS_ROTULO[m] || m) + '</option>').join('')}</select></label>
+        <label>N° de operación<br><input id="ppOperacion" maxlength="60"></label>
+        <label style="grid-column:1/-1">Nota (opcional)<br><input id="ppNota" maxlength="300"></label>
+      </div>
+      <div style="margin:6px 0">
+        <button type="button" class="sec btn-peq" data-pp-meses="1">1 mes</button>
+        <button type="button" class="sec btn-peq" data-pp-meses="3">Trimestre</button>
+        <button type="button" class="sec btn-peq" data-pp-meses="6">Semestre</button>
+        <button type="button" class="sec btn-peq" data-pp-meses="12">Año</button>
+        <span class="sub" id="ppCubre" style="margin-left:8px"></span>
+      </div>
+      <button type="submit">Registrar pago</button> <span class="sub" id="ppEstado" role="status"></span>
+    </form>` : '<p class="sub" style="margin-top:10px">Tú solo puedes ver los pagos. Si necesitas registrar uno, pídele a Carolina o a Jorge.</p>';
+  $('pagosModalCuerpo').innerHTML = `
+    <p style="margin:0 0 8px">${chipEstadoPago(f)} · pagado hasta <b>${esc(f.pagadoHasta ? nombreMes(f.pagadoHasta) : 'ningún mes todavía')}</b>${f.mesesDebidos ? ' · debe ' + f.mesesDebidos + (f.mesesDebidos === 1 ? ' mes' : ' meses') + ' (referencia ' + esc(dinero(f.montoReferencia)) + ')' : ''}${f.modalidad ? ' · modalidad ' + esc(f.modalidad.toLowerCase()) : ''}</p>
+    ${filas ? '<table><thead><tr><th>Fecha</th><th>Monto</th><th>Cubre</th><th>Medio</th><th>Estado</th><th></th></tr></thead><tbody>' + filas + '</tbody></table>' : '<p class="sub">Todavía no hay pagos registrados.</p>'}
+    ${formulario}`;
+  if ($('formPagoSocia')) actualizarCubre();
+}
+let montoEditado = false;
+function actualizarCubre() {
+  const meses = Number($('ppMeses').value), desde = $('ppDesde').value;
+  $('ppCubre').textContent = meses >= 1 && /^\d{4}-\d{2}$/.test(desde) ? 'Cubre ' + cubrePago(desde, meses) + '.' : '';
+}
+$('pagosModalCuerpo').addEventListener('input', e => {
+  if (e.target.id === 'ppMonto') montoEditado = true;
+  if (e.target.id === 'ppMeses') {
+    if (!montoEditado) $('ppMonto').value = (Number($('ppMeses').value) || 1) * pagos.cuotaReferencia;
+    actualizarCubre();
+  }
+  if (e.target.id === 'ppDesde') actualizarCubre();
+});
+$('pagosModalCuerpo').addEventListener('click', async e => {
+  const rapido = e.target.closest('[data-pp-meses]');
+  if (rapido) {
+    $('ppMeses').value = rapido.dataset.ppMeses;
+    montoEditado = false;
+    $('ppMonto').value = Number(rapido.dataset.ppMeses) * pagos.cuotaReferencia;
+    actualizarCubre();
+    return;
+  }
+  const anular = e.target.closest('[data-anular-pago]');
+  if (anular) {
+    const motivo = prompt('¿Por qué se anula este pago? (queda anotado en el historial; el pago no se borra)');
+    if (motivo === null) return;
+    const r = await post('/api/pagos/anular', { id: anular.dataset.anularPago, motivo });
+    if (r.error) return mostrar(r.error, true);
+    pagos = r;
+    pagosSocia.lista = (await (await fetch('/api/pagos/historial?clave=' + encodeURIComponent(pagosSocia.clave))).json()).pagos || [];
+    pintarPagos(); pintarModalPagos();
+    mostrar('Pago anulado.');
+  }
+});
+$('pagosModalCuerpo').addEventListener('submit', async e => {
+  if (e.target.id !== 'formPagoSocia') return;
+  e.preventDefault();
+  const cuerpo = { clave: pagosSocia.clave, fecha: $('ppFecha').value, monto: Number($('ppMonto').value), meses: Number($('ppMeses').value), desde: $('ppDesde').value, medio: $('ppMedio').value, operacion: $('ppOperacion').value, nota: $('ppNota').value };
+  const cubre = cubrePago(cuerpo.desde, cuerpo.meses);
+  if (!confirm('¿Registrar el pago de ' + dinero(cuerpo.monto) + ' que cubre ' + cubre + '?\n\nNo se puede editar después: si hay un error, se anula y se registra de nuevo.')) return;
+  $('ppEstado').textContent = 'Guardando…';
+  const r = await post('/api/pagos/registrar', cuerpo);
+  if (r.error) { $('ppEstado').textContent = ''; return mostrar(r.error, true); }
+  pagos = r;
+  montoEditado = false;
+  pagosSocia.lista = (await (await fetch('/api/pagos/historial?clave=' + encodeURIComponent(pagosSocia.clave))).json()).pagos || [];
+  pintarPagos(); pintarModalPagos();
+  mostrar('Pago registrado: ' + dinero(cuerpo.monto) + ', cubre ' + cubre + '.');
+});
+$('cerrarPagos').addEventListener('click', () => { $('modalPagos').hidden = true; });
+$('modalPagos').addEventListener('click', e => { if (e.target === $('modalPagos')) $('modalPagos').hidden = true; });
+
 // ---- Historial de cambios ----
 function textoValor(v) {
   if (v == null || v === '') return '(vacío)';
@@ -1948,6 +2144,12 @@ function cargosTexto(json) {
 function lineaHistorial(h, conNombre) {
   const cuando = new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
   const etiquetaPaso = id => (pasosDef.find(p => p.id === id) || {}).etiqueta || id;
+  if (h.accion === 'pago') {
+    const d = h.detalle || {};
+    const cubre = d.desde ? ' (desde ' + nombreMes(d.desde) + ')' : '';
+    const texto = d.anulado ? 'anuló el pago de ' + dinero(d.monto) + cubre + (d.motivo ? ': ' + d.motivo : '') : 'registró un pago de ' + dinero(d.monto) + ', cubre ' + (d.meses > 1 ? d.meses + ' meses' : '1 mes') + cubre + (d.medio ? ' · ' + (MEDIOS_ROTULO[d.medio] || d.medio).toLowerCase() : '');
+    return '<div class="hist-fila"><span class="quien">' + esc(h.usuario_nombre || 'Alguien') + '</span> · ' + esc(new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })) + '<br>' + esc(texto) + '</div>';
+  }
   const cambios = Object.entries(h.detalle || {}).map(([k, v]) => {
     if (k === 'comisiones') return 'cambió las comisiones: ' + (comisionesTexto(v.antes) || 'ninguna') + ' → ' + (comisionesTexto(v.despues) || 'ninguna');
     if (k === 'fundadora') return v.despues === 'si' ? 'la marcó como socia fundadora' : 'quitó la condición de socia fundadora';

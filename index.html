@@ -72,6 +72,13 @@
   .chip.mal { background:var(--alerta-bg); color:var(--alerta); }
   .chip.ok { background:var(--ok-bg); color:var(--verde); }
   .chip.pedido { background:#e1eefb; color:#0b57a4; }
+  .chip.pend { background:#fff3cd; color:#8a6100; }
+  .pagos-modal { width:min(880px,100%); }
+  .pagos-modal table { width:100%; border-collapse:collapse; font-size:13px; }
+  .pagos-modal th, .pagos-modal td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--borde); vertical-align:top; }
+  .pagos-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; align-items:end; margin-top:6px; }
+  .pagos-form label { font-size:13px; }
+  .pagos-form input, .pagos-form select { width:100%; }
   .chip.coord { background:#ece3fb; color:#5b2a9d; font-weight:600; }
   .e-Pendiente-de-carta { background:#fff4d6; color:#7a5800; }
   .e-Con-documentos { background:#dcecfb; color:#0f5a96; }
@@ -221,6 +228,7 @@
   <h1>AMAGRO AG <small>· Revisión de postulaciones</small></h1>
   <div class="acciones">
     <span id="usuario"></span>
+    <button id="verPagos" title="Pantalla de pagos de las socias: quién está al día, quién debe y cuánto">💰 Pagos</button>
     <button id="actualizar" title="Descarga de nuevo la planilla de Google y suma las postulaciones nuevas">↻ Actualizar</button>
     <button class="sec" id="verAyuda" title="Guía de primeros pasos">? Ayuda</button>
     <div class="menu-wrap">
@@ -476,6 +484,7 @@
   <div id="mensaje" class="aviso" hidden></div>
   <div class="fuente" id="fuente"></div>
   <div id="avisos"></div>
+  <div id="vistaLista">
   <div class="resumen" id="resumen"></div>
   <div class="controles">
     <input type="search" id="buscar" placeholder="Buscar por nombre, RUT, empresa, comuna…">
@@ -518,6 +527,27 @@
     </tr></thead>
     <tbody id="filas"></tbody>
   </table></div>
+  </div>
+  <div id="pantallaPagos" hidden>
+    <h2 style="margin:6px 0 2px">Pagos de las socias</h2>
+    <div class="sub" id="pagosNota" style="margin-bottom:8px"></div>
+    <div class="resumen" id="pagosResumen"></div>
+    <div class="controles">
+      <input type="search" id="pagosBuscar" placeholder="Buscar por nombre o RUT…">
+      <select id="pagosEstado">
+        <option value="">Todos los estados</option>
+        <option value="atrasada">Atrasadas</option>
+        <option value="pendiente">Pendientes (cuota de este mes)</option>
+        <option value="al-dia">Al día</option>
+      </select>
+      <select id="pagosRegion"><option value="">Todas las regiones</option></select>
+      <button class="sec btn-peq" id="pagosCsv" title="Descarga la lista de pagos para Excel">Descargar CSV</button>
+    </div>
+    <div class="tabla"><table>
+      <thead><tr><th>Nombre</th><th>RUT</th><th>Región</th><th>Etapa</th><th>Modalidad</th><th>Pagado hasta</th><th>Estado</th><th>Último pago</th><th></th></tr></thead>
+      <tbody id="pagosFilas"></tbody>
+    </table></div>
+  </div>
 </main>
 
 <aside id="ficha" aria-label="Ficha de la postulante" aria-hidden="true"></aside>
@@ -636,6 +666,15 @@
     <p class="sub" style="margin:8px 0 0">Solo se muestra aquí, en tu pantalla: no se guarda en este computador.</p>
   </div>
 </div>
+<div id="modalPagos" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="pagosModalTitulo">
+  <div class="modal-caja pagos-modal">
+    <div class="modal-cab">
+      <h2 id="pagosModalTitulo">Pagos</h2>
+      <button class="cerrar" id="cerrarPagos" aria-label="Cerrar">×</button>
+    </div>
+    <div id="pagosModalCuerpo"></div>
+  </div>
+</div>
 <div id="modalMensaje" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitulo">
   <div class="modal-caja">
     <div class="modal-cab">
@@ -659,9 +698,9 @@
 </div>
 
 <script src="config.js?v=c8ec37a6"></script>
-<script src="app.js?v=95808018"></script>
+<script src="app.js?v=a2363a82"></script>
 <script src="mensaje.js?v=dc41d3e0"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=437d4e60"></script>
+<script src="ui.js?v=a985bdeb"></script>
 </body>
 </html>
