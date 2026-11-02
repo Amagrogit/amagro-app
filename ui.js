@@ -86,7 +86,7 @@ const CONTROLES_PESTANA = {
 const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region'];
 const COLUMNAS_PESTANA = {
   postulantes: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>',
-  socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th title="Grupo de WhatsApp de las socias">Grupo</th><th>Pago</th>',
+  socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th title="Grupo de WhatsApp de las socias">Grupo WhatsApp</th><th>Pago</th>',
   otras: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th>Observaciones</th>',
 };
 // Las postulaciones marcadas como no activas (por ejemplo, las antiguas) pasan a «Otras», sea cual sea su etapa.
