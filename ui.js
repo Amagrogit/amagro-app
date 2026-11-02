@@ -2088,10 +2088,14 @@ async function cargarPagos() {
 }
 function pintarPagos() {
   if (!pagos) return;
-  const q = $('pagosBuscar').value.toLowerCase(), est = $('pagosEstado').value, reg = $('pagosRegion').value;
+  const etapaPrevia = $('pagosEtapa').value;
+  const porEtapa = e => pagos.filas.filter(f => f.etapa === e).length;
+  $('pagosEtapa').innerHTML = '<option value="">Socias y aprobadas (' + pagos.filas.length + ')</option>' + ['Socia', 'Aprobada'].filter(porEtapa).map(e => '<option value="' + e + '">' + (e === 'Socia' ? 'Solo socias' : 'Solo aprobadas (aún no pagan la primera cuota)') + ' (' + porEtapa(e) + ')</option>').join('');
+  if ([...$('pagosEtapa').options].some(o => o.value === etapaPrevia)) $('pagosEtapa').value = etapaPrevia;
+  const q = $('pagosBuscar').value.toLowerCase(), est = $('pagosEstado').value, reg = $('pagosRegion').value, eta = $('pagosEtapa').value;
   const rango = { atrasada: 0, pendiente: 1, 'al-dia': 2 };
   const vis = pagos.filas
-    .filter(f => (!q || [f.nombre, f.rut].join(' ').toLowerCase().includes(q)) && (!est || f.estado === est) && (!reg || f.region === reg))
+    .filter(f => (!q || [f.nombre, f.rut].join(' ').toLowerCase().includes(q)) && (!est || f.estado === est) && (!eta || f.etapa === eta) && (!reg || f.region === reg))
     .sort((a, b) => rango[a.estado] - rango[b.estado] || b.mesesDebidos - a.mesesDebidos || a.nombre.localeCompare(b.nombre, 'es'));
   const s = pagos.resumen;
   $('pagosNota').textContent = 'El control parte en ' + nombreMes(pagos.inicio) + ': lo anterior no se controla. La cuota vence el día 1 de cada mes (referencia: ' + dinero(pagos.cuotaReferencia) + ' por mes; cada pago anota su monto real). ' + (pagos.puedeRegistrar ? '' : 'Tú solo puedes ver los pagos.');
@@ -2115,7 +2119,7 @@ function pintarPagos() {
       <td>${pagos.puedeRegistrar ? '<button class="btn-peq" data-pagos-registrar="' + esc(f.clave) + '">Registrar pago</button>' : ''}</td>
     </tr>`).join('') : '<tr><td colspan="9" class="vacio">Sin resultados</td></tr>';
 }
-['pagosBuscar', 'pagosEstado', 'pagosRegion'].forEach(id => $(id).addEventListener('input', pintarPagos));
+['pagosBuscar', 'pagosEstado', 'pagosEtapa', 'pagosRegion'].forEach(id => $(id).addEventListener('input', pintarPagos));
 $('verPagos').addEventListener('click', () => ($('pantallaPagos').hidden ? abrirPantallaPagos() : cerrarPantallaPagos()));
 $('pagosFilas').addEventListener('click', e => {
   const ver = e.target.closest('[data-pagos-socia]'), reg = e.target.closest('[data-pagos-registrar]');
