@@ -72,6 +72,13 @@
   .chip.mal { background:var(--alerta-bg); color:var(--alerta); }
   .chip.ok { background:var(--ok-bg); color:var(--verde); }
   .chip.pedido { background:#e1eefb; color:#0b57a4; }
+  .pestanas { --c:#1769aa; display:flex; gap:8px; margin:16px 0 14px; border-bottom:5px solid var(--c); align-items:flex-end; flex-wrap:wrap; }
+  .pestana { --tc:#1769aa; --tf:#e3f0fb; border:0; padding:13px 26px; font-size:18px; font-weight:700; color:var(--tc); background:var(--tf); cursor:pointer; border-radius:14px 14px 0 0; transition:background .15s; font-family:inherit; }
+  .pestana[data-pestana=socias] { --tc:#2e7d32; --tf:#e3f3e4; }
+  .pestana[data-pestana=otras]  { --tc:#b25e00; --tf:#fdeed8; }
+  .pestana:hover { filter:brightness(.97); }
+  .pestana.activa { background:var(--tc); color:#fff; padding:16px 32px; font-size:20px; box-shadow:0 -3px 10px rgba(0,0,0,.12); }
+  .pestana .n { display:inline-block; background:#fff; color:var(--tc); border-radius:999px; padding:1px 10px; font-size:14px; margin-left:8px; font-weight:700; }
   .chip.pend { background:#fff3cd; color:#8a6100; }
   .pagos-modal { width:min(880px,100%); }
   .pagos-modal table { width:100%; border-collapse:collapse; font-size:13px; }
@@ -485,6 +492,11 @@
   <div class="fuente" id="fuente"></div>
   <div id="avisos"></div>
   <div id="vistaLista">
+  <div class="pestanas" id="pestanas" role="tablist" aria-label="Listados">
+    <button class="pestana activa" data-pestana="postulantes" role="tab" title="Postulaciones en proceso: carta, documentos y aprobación">Postulantes <span class="n" id="nPostulantes">0</span></button>
+    <button class="pestana" data-pestana="socias" role="tab" title="Socias: cargos, comisiones y pagos">Socias <span class="n" id="nSocias">0</span></button>
+    <button class="pestana" data-pestana="otras" role="tab" title="Quienes renunciaron o no califican">Otras <span class="n" id="nOtras">0</span></button>
+  </div>
   <div class="resumen" id="resumen"></div>
   <div class="controles">
     <input type="search" id="buscar" placeholder="Buscar por nombre, RUT, empresa, comuna…">
@@ -508,6 +520,7 @@
     </select>
     <select id="filtroCargo" title="Filtrar por cargo o por condición de socia fundadora"><option value="">Cargos: todos</option></select>
     <select id="filtroComision" title="Filtrar por comisión"><option value="">Con o sin comisiones</option></select>
+    <select id="filtroPago" title="Filtrar por estado de la cuota"><option value="">Todos los pagos</option><option value="al-dia">Al día</option><option value="pendiente">Pendiente</option><option value="atrasada">Atrasada</option></select>
     <select id="region"><option value="">Todas las regiones</option></select>
     <datalist id="listaCargos"></datalist>
   </div>
@@ -519,11 +532,8 @@
     <span class="sub">No se borra nada: las no activas se ocultan y se pueden volver a activar.</span>
   </div>
   <div class="tabla"><table>
-    <thead id="encabezadoTabla"><tr>
+    <thead id="encabezadoTabla"><tr id="encabezadoFila">
       <th class="col-sel"><input type="checkbox" id="selTodas" aria-label="Seleccionar todas las de la lista" title="Seleccionar todas las de esta lista"></th>
-      <th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th>
-      <th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th>
-      <th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>
     </tr></thead>
     <tbody id="filas"></tbody>
   </table></div>
@@ -701,6 +711,6 @@
 <script src="app.js?v=a2363a82"></script>
 <script src="mensaje.js?v=dc41d3e0"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=a985bdeb"></script>
+<script src="ui.js?v=2745cfef"></script>
 </body>
 </html>

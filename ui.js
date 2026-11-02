@@ -56,10 +56,7 @@ function cargar(resp, conservar) {
     + '<option value="coord">Coordinadoras (' + enComision(c => c.rol === 'coordinadora') + ')</option>'
     + comisionesCatalogo.map(c => '<option value="' + esc(c.id) + '">' + esc(c.nombre) + (c.estatutaria ? ' (estatutaria)' : '') + ' (' + enComision(x => x.id === c.id) + ')</option>').join('');
   if ([...$('filtroComision').options].some(o => o.value === filtroComisionPrevio)) $('filtroComision').value = filtroComisionPrevio;
-  const cuenta = {};
-  datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
-  $('etapa').innerHTML = '<option value="">Todas las etapas</option>' +
-    ETAPAS.filter(e => cuenta[e]).map(e => `<option value="${esc(e)}">${esc(e)} (${cuenta[e]})</option>`).join('');
+  llenarEtapas();
   // Al guardar una edición se conservan los filtros y la ficha abierta
   for (const id of ['region', 'etapa']) {
     if ([...$(id).options].some(o => o.value === previo[id])) $(id).value = previo[id];
@@ -73,6 +70,117 @@ function cargar(resp, conservar) {
 
 let ultimosVisibles = [];
 const visiblesActuales = () => ultimosVisibles;
+// ---- Pestañas del listado: Postulantes · Socias · Otras ----
+// Cada pestaña muestra una parte de la misma lista, con sus propias tarjetas, filtros y columnas. La aplicación siempre abre en «Postulantes».
+let pestana = 'postulantes';
+const ETAPAS_PESTANA = {
+  postulantes: ['Pendiente de carta', 'Con documentos', 'Aprobada', 'Sin gestión'], // incluye a las aprobadas: son socias recién cuando pagan
+  socias: ['Socia'],
+  otras: ['Renuncia', 'No califica'],
+};
+const CONTROLES_PESTANA = {
+  postulantes: ['etapa', 'periodo', 'filtro', 'region'],
+  socias: ['filtroCargo', 'filtroComision', 'filtroPago', 'region'],
+  otras: ['etapa', 'region'],
+};
+const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'region'];
+const COLUMNAS_PESTANA = {
+  postulantes: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>',
+  socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th>Pago</th>',
+  otras: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th>Observaciones</th>',
+};
+const enPestana = (d, p = pestana) => ETAPAS_PESTANA[p].includes(d.etapa);
+const pagoDe = clave => (pagos && pagos.filas.find(f => f.clave === clave)) || null;
+
+function renderEncabezado() {
+  const fila = $('encabezadoFila');
+  [...fila.children].slice(1).forEach(x => x.remove()); // la primera columna (casilla de selección) no cambia
+  fila.insertAdjacentHTML('beforeend', COLUMNAS_PESTANA[pestana]);
+}
+function llenarEtapas() {
+  const cuenta = {};
+  datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
+  $('etapa').innerHTML = '<option value="">' + (pestana === 'otras' ? 'Renuncia y No califica' : 'Todas las etapas') + '</option>' +
+    ETAPAS.filter(e => cuenta[e] && ETAPAS_PESTANA[pestana].includes(e)).map(e => `<option value="${esc(e)}">${esc(e)} (${cuenta[e]})</option>`).join('');
+}
+function aplicarPestana() {
+  for (const id of TODOS_LOS_CONTROLES) $(id).style.display = CONTROLES_PESTANA[pestana].includes(id) ? '' : 'none';
+  $('buscar').placeholder = pestana === 'socias' ? 'Buscar por nombre, RUT, empresa, N° de inscripción…' : 'Buscar por nombre, RUT, empresa, comuna…';
+  document.querySelectorAll('.pestana').forEach(b => b.classList.toggle('activa', b.dataset.pestana === pestana));
+  const activa = document.querySelector('.pestana.activa');
+  if (activa) $('pestanas').style.setProperty('--c', getComputedStyle(activa).getPropertyValue('--tc'));
+  renderEncabezado();
+  llenarEtapas();
+}
+// Al cambiar de pestaña se limpian los filtros (los de una pestaña no tienen sentido en otra); lo escrito en el buscador se conserva.
+function cambiarPestana(p) {
+  if (p === pestana) return;
+  pestana = p;
+  for (const id of TODOS_LOS_CONTROLES) $(id).value = '';
+  $('filtro').value = 'todas';
+  orden = { campo: null, dir: 0 };
+  aplicarPestana();
+  if (p === 'socias') cargarPagos(); // el estado de pago de cada socia viene de la pantalla de pagos
+  pintar();
+}
+$('pestanas').addEventListener('click', e => {
+  const b = e.target.closest('[data-pestana]');
+  if (!b || b.dataset.pestana === pestana || !puedeSalir()) return;
+  cerrarFicha();
+  cambiarPestana(b.dataset.pestana);
+});
+
+// Las dos primeras celdas de cada fila (casilla y nombre) son las mismas en todas las pestañas.
+function celdasInicio(d) {
+  return `<td class="col-sel"><input type="checkbox" data-sel="${esc(d.clave)}" aria-label="Seleccionar a ${esc(d.nombre)}"${seleccionadas.has(d.clave) ? ' checked' : ''}></td>
+      <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.inactiva ? ' <span class="chip" title="La administración dejó de gestionar esta postulación">No activa</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>`;
+}
+function filaSocia(d) {
+  const p = pagoDe(d.clave);
+  const cargos = d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('');
+  const comisiones = d.comisiones.map(c => `<span class="chip${c.rol === 'coordinadora' ? ' coord' : ''}" title="${esc(c.nombre + ' · ' + c.rol)}">${esc(c.nombre)}${c.rol === 'coordinadora' ? ' · coordinadora' : ''}</span>`).join('');
+  const pago = p ? chipEstadoPago(p) + (p.pagadoHasta ? `<small class="corto corto-reg">hasta ${esc(nombreMes(p.pagadoHasta))}</small>` : '') : (pagos ? '<span class="nada">—</span>' : '<span class="sub">…</span>');
+  return `
+    <tr class="${d.fila === seleccion ? 'sel' : ''}">
+      ${celdasInicio(d)}
+      <td class="fecha">${esc(d.inscripcion) || '<span class="nada">—</span>'}</td>
+      <td class="fecha">${esc(d.rut)}</td>
+      <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
+      <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
+      <td>${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${cargos}${comisiones}</td>
+      <td>${pago}</td>
+    </tr>`;
+}
+function filaOtra(d) {
+  return `
+    <tr class="${d.fila === seleccion ? 'sel' : ''}${d.inactiva ? ' inactiva' : ''}">
+      ${celdasInicio(d)}
+      <td class="fecha">${d.postulacion ? esc(fechaCL(d.postulacion.slice(0, 10))) : '<span class="nada">—</span>'}</td>
+      <td class="fecha">${esc(d.rut)}</td>
+      <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
+      <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span></td>
+      <td>${d.observaciones ? `<span class="corto" title="${esc(d.observaciones)}">${esc(d.observaciones)}</span>` : '<span class="nada">—</span>'}</td>
+    </tr>`;
+}
+// Tarjetas de resumen de cada pestaña y contadores de las pestañas (no cuentan duplicadas ni no activas).
+function resumenPestana(vis) {
+  const activas = datos.filter(d => !d.duplicadaDe && !d.inactiva);
+  const cuentaDe = p => activas.filter(d => enPestana(d, p)).length;
+  $('nPostulantes').textContent = cuentaDe('postulantes'); $('nSocias').textContent = cuentaDe('socias'); $('nOtras').textContent = cuentaDe('otras');
+  const mias = activas.filter(d => enPestana(d));
+  const t = (n, texto, clase = '') => `<div class="tarjeta ${clase}"><div class="n">${n}</div>${texto}</div>`;
+  if (pestana === 'socias') {
+    const estados = pagos ? mias.map(d => (pagoDe(d.clave) || {}).estado) : [];
+    return t(mias.length, 'socias') + t(mias.filter(d => d.fundadora).length, 'fundadoras') + t(mias.filter(d => d.cargosDetalle.length).length, 'con cargo') + t(mias.filter(d => d.comisiones.length).length, 'en alguna comisión')
+      + (pagos ? t(estados.filter(e => e === 'al-dia').length, 'al día', 'bien') + t(estados.filter(e => e === 'pendiente' || e === 'atrasada').length, 'pendientes o atrasadas', 'mal') : '');
+  }
+  if (pestana === 'otras') return t(mias.length, 'en total') + t(mias.filter(d => d.etapa === 'Renuncia').length, 'renunciaron') + t(mias.filter(d => d.etapa === 'No califica').length, 'no califican');
+  const con = mias.filter(d => d.alertas.length).length;
+  return t(mias.length, 'postulantes en proceso') + t(vis.length, 'en esta lista') + t(mias.length - con, 'sin alertas', 'bien') + t(con, 'con alertas', 'mal');
+}
+aplicarPestana();
+
 // Con el filtro de comisiones activo, la fila dice el rol en la comisión: la coordinadora se ve de otro color, y al filtrar «Coordinadoras» se ve de qué comisión.
 function chipsComisionLista(d, fcom) {
   if (!fcom) return '';
@@ -84,13 +192,15 @@ function chipsComisionLista(d, fcom) {
   return c ? chip(c, coord(c) ? '★ Coordinadora' : 'Integrante') : '';
 }
 function pintar() {
-  const fc = $('filtroCargo').value, fcom = $('filtroComision').value;
+  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
   // Las postulaciones marcadas como duplicadas ya están resueltas: solo se ven con el filtro «Marcadas como duplicadas».
   const vis = datos.filter(d =>
-    (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo].join(' ').toLowerCase().includes(q)) &&
+    (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo, pestana === 'socias' ? d.inscripcion : ''].join(' ').toLowerCase().includes(q)) &&
+    (f === 'marcadas' || f === 'inactivas' || enPestana(d)) && // los filtros «no activas» y «duplicadas» miran todas las etapas
+    (!fp || (pagoDe(d.clave) || {}).estado === fp) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || d.etapa === et) &&
@@ -115,17 +225,10 @@ function pintar() {
   document.querySelectorAll('#encabezadoTabla .orden').forEach(b => {
     b.querySelector('span').textContent = b.dataset.orden === orden.campo && orden.dir ? (orden.dir === 1 ? '▲' : '▼') : '';
   });
-  const activas = datos.filter(d => !d.duplicadaDe && !d.inactiva);
-  const con = activas.filter(d => d.alertas.length).length;
-  $('resumen').innerHTML =
-    `<div class="tarjeta"><div class="n">${activas.length}</div>postulaciones</div>` +
-    `<div class="tarjeta"><div class="n">${vis.length}</div>en esta lista</div>` +
-    `<div class="tarjeta bien"><div class="n">${activas.length - con}</div>sin alertas</div>` +
-    `<div class="tarjeta mal"><div class="n">${con}</div>con alertas</div>`;
-  $('filas').innerHTML = vis.length ? vis.map(d => `
+  $('resumen').innerHTML = resumenPestana(vis);
+  $('filas').innerHTML = vis.length ? vis.map(d => pestana === 'socias' ? filaSocia(d) : pestana === 'otras' ? filaOtra(d) : `
     <tr class="${d.fila === seleccion ? 'sel' : ''}${d.inactiva ? ' inactiva' : ''}">
-      <td class="col-sel"><input type="checkbox" data-sel="${esc(d.clave)}" aria-label="Seleccionar a ${esc(d.nombre)}"${seleccionadas.has(d.clave) ? ' checked' : ''}></td>
-      <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.inactiva ? ' <span class="chip" title="La administración dejó de gestionar esta postulación">No activa</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>
+      ${celdasInicio(d)}
       <td class="fecha">${d.postulacion
         ? `<span title="${esc(d.postulacion.length > 10 ? 'Hora de envío: ' + d.postulacion.slice(11, 16) : 'Sin hora registrada')}">${esc(fechaCL(d.postulacion.slice(0, 10)))}</span>`
         : (d.marca ? `<span class="fecha-texto" title="${esc(d.marca)}">${esc(d.marca)}</span>` : '<span class="nada">—</span>')}</td>
@@ -136,7 +239,7 @@ function pintar() {
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
-    </tr>`).join('') : '<tr><td colspan="10" class="vacio">Sin resultados</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="' + (pestana === 'postulantes' ? 10 : 8) + '" class="vacio">Sin resultados</td></tr>';
   actualizarSeleccion(vis);
 }
 
@@ -1272,7 +1375,7 @@ document.addEventListener('keydown', e => {
   if (editando) abrirFicha(seleccion); else cerrarFicha();
 });
 
-['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
+['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
 
 // Orden por columna. Cada clic en el mismo encabezado recorre: primera dirección -> la opuesta -> sin orden.
 // La fecha parte con las más recientes arriba; el nombre, de la A a la Z.
@@ -1662,6 +1765,7 @@ $('correccionesLista').addEventListener('click', async e => {
 });
 
 $('verPorRevisar').addEventListener('click', () => {
+  cambiarPestana('postulantes');
   $('filtro').value = 'porrevisar';
   if (puedeSalir()) { cerrarFicha(); pintar(); }
 });
@@ -1980,6 +2084,7 @@ async function cargarPagos() {
   if (r.error) { $('pagosNota').textContent = r.error; return; }
   pagos = r;
   pintarPagos();
+  if (pestana === 'socias') pintar();
 }
 function pintarPagos() {
   if (!pagos) return;
