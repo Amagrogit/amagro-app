@@ -694,6 +694,26 @@ function pintarPanelComisiones() {
       + '</tbody></table>'
     : 'Todavía no hay comisiones.';
 }
+// Panel de la administradora (⚙ → Datos de pago): la cuota y la cuenta que lleva la carta de bienvenida.
+async function cargarPanelPago() {
+  $('pgEstado').textContent = 'Cargando…';
+  const r = await (await fetch('/api/datos-pago')).json().catch(() => ({ error: 'No se pudieron cargar los datos.' }));
+  if (r.error) { $('pgEstado').textContent = r.error; return; }
+  const p = r.pago || {};
+  $('pgTipo').innerHTML = (r.tiposCuenta || []).map(t => '<option>' + esc(t) + '</option>').join('');
+  $('pgCuota').value = p.cuota || ''; $('pgTitular').value = p.titular || ''; $('pgRut').value = p.rut || ''; $('pgBanco').value = p.banco || '';
+  $('pgTipo').value = p.tipoCuenta || 'Cuenta corriente'; $('pgCuenta').value = p.cuenta || ''; $('pgCorreo').value = p.correo || '';
+  $('pgEstado').textContent = r.pago ? '' : 'Todavía no hay datos guardados: la carta de bienvenida sale sin cuota ni cuenta.';
+}
+$('verPago').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelPago')) cargarPanelPago(); });
+$('formPago').addEventListener('submit', async e => {
+  e.preventDefault();
+  const r = await post('/api/datos-pago', { cuota: $('pgCuota').value, titular: $('pgTitular').value, rut: $('pgRut').value, banco: $('pgBanco').value, tipoCuenta: $('pgTipo').value, cuenta: $('pgCuenta').value, correo: $('pgCorreo').value });
+  if (r.error) { $('pgEstado').textContent = ''; return mostrar(r.error, true); }
+  $('pgEstado').textContent = '';
+  mostrar('Datos de pago guardados. La carta de bienvenida los usará desde ahora.');
+  cargarPanelPago();
+});
 $('verComisiones').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelComisiones')) pintarPanelComisiones(); });
 async function cambiarListaComisiones(ruta, cuerpo, mensaje) {
   const r = await post(ruta, cuerpo);
@@ -835,7 +855,7 @@ async function abrirModalBienvenida(fila = seleccion) {
     if (bvActual !== actual) return;
     actual.correo = j;
     $('bvPara').textContent = j.destinatario || '—'; $('bvAsunto').textContent = j.asunto; $('bvCuerpo').value = j.cuerpo; $('bvSinCorreo').hidden = !j.correoInvalido;
-    $('bvAvisos').innerHTML = j.pagoIncluido ? '' : '<p class="sub" style="color:var(--alerta);margin:0 0 6px"><b>Esta carta todavía no incluye la cuota social ni los datos para pagar</b> (se agregarán cuando se defina la forma de pago). Si la envías ahora, esa información habrá que darla aparte.</p>';
+    $('bvAvisos').innerHTML = j.pagoIncluido ? '' : '<p class="sub" style="color:var(--alerta);margin:0 0 6px"><b>Esta carta todavía no incluye la cuota social ni los datos para pagar</b> (una administradora debe completarlos en ⚙ → Datos de pago). Si la envías ahora, esa información habrá que darla aparte.</p>';
     const p = await fetch('/api/carta-bienvenida', { method: 'POST', body: JSON.stringify({ clave: d.clave }) });
     if (!p.ok) throw new Error(((await p.json().catch(() => ({}))).error) || 'No se pudo generar la carta en PDF.');
     actual.nombre = ((p.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'Carta_bienvenida.pdf';
@@ -1290,7 +1310,7 @@ async function post(url, cuerpo) {
 }
 
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
-const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones'];
+const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones', 'panelPago'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
 // Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
 PANELES.forEach(id => {
@@ -1706,6 +1726,7 @@ async function entrarALaApp(usuario) {
   $('importarSocias').hidden = !esAdmin;
   $('verUsuarias').hidden = !esAdmin;
   $('verComisiones').hidden = !esAdmin;
+  $('verPago').hidden = !esAdmin;
   $('usuario').textContent = usuario ? usuario.nombre + ' · ' + (ROL[usuario.rol] || usuario.rol) : '';
   const r = await fetch('/api/postulaciones');
   if (r.ok) { cargar(await r.json()); revisarMigracion(); if (puedeEditarRol(usuario.rol)) iniciarConsultaPendientes(); }

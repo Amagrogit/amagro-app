@@ -1261,6 +1261,15 @@ class Almacen {
     await this.sesion.pedir('POST', 'configuracion?on_conflict=clave', { cuerpo: { clave: 'hoja_url', valor: url, actualizado: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
   }
 
+  // ---- Datos de pago (cuota y cuenta de AMAGRO): los lee el personal; solo la administradora los cambia (lo exige la base) ----
+  async leerDatosPago() {
+    const { datos } = await this.sesion.pedir('GET', 'configuracion?select=valor&clave=eq.datos_pago');
+    return datos && datos[0] ? datos[0].valor : null;
+  }
+  async guardarDatosPago(valor) {
+    await this.sesion.pedir('POST', 'configuracion?on_conflict=clave', { cuerpo: { clave: 'datos_pago', valor, actualizado: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
+  }
+
   // ---- Comisiones (la lista; quién integra cada una se guarda en la ficha de cada socia) ----
   // Si la tabla todavía no existe (falta ejecutar el esquema), la aplicación sigue funcionando, solo sin comisiones.
   async comisiones() {
@@ -1611,6 +1620,7 @@ const { proponer, planDeAplicacion } = require('./duplicados');
 const noAceptacion = require('./cartaNoAceptacion');
 const bienvenida = require('./cartaBienvenida');
 const CM = require('./comisiones');
+const PAGO = require('./pago');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1707,6 +1717,8 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     };
   }
   const datosActuales = async () => respuestaDatos(await leerOrigen());
+  // Los datos de pago salen de la configuración de la base; si faltan o no se pueden leer, la carta sale sin ellos (y lo avisa).
+  const datosPago = async () => PAGO.leer(await almacen.leerDatosPago().catch(() => null));
   const buscarRegistro = async clave => typeof clave === 'string' && (await datosActuales()).registros.find(r => r.clave === clave);
   const urlPagina = ruta => `${paginaSubida().replace(/[#/]+$/, '')}${ruta}`;
   // Direcciones de los tres PDF de los estatutos (viven en la página de subida), o nada si no está configurada.
@@ -2127,6 +2139,21 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
         cabeceras: { 'Content-Disposition': 'attachment; filename="' + noAceptacion.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
     }
 
+    // ---------- Datos de pago (cuota y cuenta de AMAGRO) ----------
+    // Salen de la configuración de la base: la administradora los cambia aquí y la carta de bienvenida los toma de ahí.
+    if (ruta === 'GET /api/datos-pago') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede ver los datos de pago.');
+      return ok({ pago: await datosPago(), tiposCuenta: PAGO.TIPOS_CUENTA });
+    }
+    if (ruta === 'POST /api/datos-pago') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar los datos de pago.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const v = PAGO.validar(a.cuerpo);
+      if (v.error) return fallo(400, v.error);
+      await almacen.guardarDatosPago(v.limpio);
+      return ok({ pago: v.limpio });
+    }
+
     // Carta de bienvenida: solo para postulaciones con el paso «Aprobada por el directorio». Un correo corto con la carta
     // y los enlaces al resumen de los estatutos y a los estatutos completos (el texto sale de lib/cartaBienvenida.js).
     if (ruta === 'GET /api/carta-bienvenida/texto') {
@@ -2134,7 +2161,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
       const enlaces = enlacesEstatutos();
-      return ok({ ...bienvenida.correo(registro, enlaces), enlaces });
+      return ok({ ...bienvenida.correo(registro, enlaces, await datosPago()), enlaces });
     }
 
     // Enlace único a la carta de bienvenida de esa persona: deja lista su carta (PDF con logo y su nombre) y crea el enlace.
@@ -2145,7 +2172,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
       if (!paginaSubida()) return fallo(400, 'Falta configurar la dirección de la página de subida (paginaSubida).');
-      await almacen.prepararBienvenida(registro.clave, await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos() }));
+      await almacen.prepararBienvenida(registro.clave, await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos(), pago: await datosPago() }));
       const e = await almacen.crearEnlaceBienvenida(registro.clave, 60);
       return ok({ url: urlPagina(`/bienvenida.html#${e.token}`), vence_en: e.vence_en });
     }
@@ -2155,7 +2182,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       const registro = await buscarRegistro((a.cuerpo || {}).clave);
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
-      return { estado: 200, bytes: await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos() }), tipo: 'application/pdf',
+      return { estado: 200, bytes: await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos(), pago: await datosPago() }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': 'attachment; filename="' + bienvenida.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
     }
 
@@ -2803,13 +2830,54 @@ module.exports = { Redactor, t };
 
 });
 
+definir("lib/pago", function (module, exports, require, __dirname, Buffer) {
+// Cuota social y datos para pagar. Se guardan en la configuración de la base (clave «datos_pago»), no en el código:
+// la administradora los cambia desde ⚙ → Datos de pago y los leen la carta de bienvenida y, más adelante, la pantalla de pagos.
+const N = require('./normalizar');
+
+const TIPOS_CUENTA = ['Cuenta corriente', 'Cuenta vista', 'Cuenta de ahorro'];
+const CLAVE = 'datos_pago';
+
+const texto = v => String(v == null ? '' : v).replace(/[\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Valida lo que llega de la pantalla (o lo guardado). Devuelve { limpio } o { error }.
+function validar(entrada) {
+  if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) return { error: 'Los datos de pago no son válidos.' };
+  const largo = (valor, rotulo, min, max) => {
+    const t = texto(valor);
+    return t.length < min || t.length > max ? { error: `${rotulo}: debe tener entre ${min} y ${max} letras.` } : { t };
+  };
+  const cuota = largo(entrada.cuota, 'La cuota', 3, 400); if (cuota.error) return cuota;
+  const titular = largo(entrada.titular, 'El titular', 3, 120); if (titular.error) return titular;
+  const banco = largo(entrada.banco, 'El banco', 2, 60); if (banco.error) return banco;
+  const rut = N.normalizarRut(entrada.rut);
+  if (!rut.valido) return { error: 'El RUT del titular no es válido.' };
+  const tipoCuenta = texto(entrada.tipoCuenta) || TIPOS_CUENTA[0];
+  if (!TIPOS_CUENTA.includes(tipoCuenta)) return { error: 'El tipo de cuenta no es válido.' };
+  const cuenta = String(entrada.cuenta == null ? '' : entrada.cuenta).replace(/[\s.\-]/g, '');
+  if (!/^\d{4,20}$/.test(cuenta)) return { error: 'El número de cuenta debe tener solo números (entre 4 y 20).' };
+  const correo = N.normalizarCorreo(entrada.correo);
+  if (!N.correoValido(correo)) return { error: 'El correo para comprobantes no es válido.' };
+  return { limpio: { cuota: cuota.t, titular: titular.t, rut: rut.valor, banco: banco.t, tipoCuenta, cuenta, correo } };
+}
+
+// Lo guardado en la base; si falta o está dañado, no hay datos de pago (la carta lo avisa).
+function leer(valor) {
+  const v = validar(valor);
+  return v.limpio || null;
+}
+
+module.exports = { CLAVE, TIPOS_CUENTA, validar, leer };
+
+});
+
 definir("lib/cartaBienvenida", function (module, exports, require, __dirname, Buffer) {
 // Carta de bienvenida a quien el Directorio aprobó. Tiene dos formas, con el mismo texto (revisado por el Directorio):
 //  - el PDF con logo y el nombre de la persona (varias páginas), que ella descarga desde un enlace único; y
 //  - un correo corto que le avisa y le da ese enlace, más los enlaces a los estatutos.
 //
 // PENDIENTE: la información de la cuota social y los datos para pagar. Se agregará cuando se defina la forma de pago
-// (por ejemplo, con Flow). La cuota y los datos de la cuenta están en PAGO y van en el PDF.
+// (por ejemplo, con Flow). La cuota y los datos de la cuenta salen de la configuración (lib/pago.js) y van en el PDF.
 const { titulo } = require('./carta');
 const { crearPdfPaginas, leerImagen } = require('./pdf');
 const { Redactor, t } = require('./redactor');
@@ -2818,17 +2886,6 @@ const { sinTildes } = require('./normalizar');
 
 const ASUNTO = '¡Bienvenida a AMAGRO AG!';
 const MARCA_CARTA = '[ENLACE_CARTA_BIENVENIDA]'; // en el texto del correo; se reemplaza por el enlace único al enviarlo
-// Cuota y datos para pagar, tal como los aprobó el Directorio (Word «RevMTL»). Van en la carta completa (el PDF); el correo es corto y no los repite.
-const PAGO = {
-  cuota: '$10.000 mensuales. Agradecemos, en lo posible, realizar pagos trimestrales, semestrales o anuales para facilitar la gestión administrativa.',
-  datos: [
-    ['Titular', 'Asociación Gremial de Mujeres del Agro de Chile A.G.'],
-    ['RUT', '65.136.478-7'],
-    ['Banco', 'Scotiabank'],
-    ['Cuenta corriente', '991103724'],
-    ['Correo para comprobantes', 'contabilidad@amagroag.cl'],
-  ],
-};
 const CIUDAD = 'Santiago';
 
 const CARTA = [
@@ -2867,7 +2924,7 @@ function listaEstatutos(enlaces = {}) {
 }
 
 // Correo corto: avisa, da el enlace a la carta (MARCA_CARTA) y los enlaces a los estatutos.
-function correo(registro, enlaces = {}) {
+function correo(registro, enlaces = {}, pago = null) {
   const correoInvalido = !registro.correo || registro.alertas.some(a => /^Correo inválido/.test(a));
   const lista = listaEstatutos(enlaces);
   const cuerpo = [
@@ -2878,7 +2935,7 @@ function correo(registro, enlaces = {}) {
     CIERRE[0], '',
     ...FIRMA,
   ].join('\n');
-  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: registro.nombre ? ASUNTO + ' · ' + titulo(registro.nombre) : ASUNTO, cuerpo, pagoIncluido: !!PAGO, marca: MARCA_CARTA };
+  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: registro.nombre ? ASUNTO + ' · ' + titulo(registro.nombre) : ASUNTO, cuerpo, pagoIncluido: !!pago, marca: MARCA_CARTA };
 }
 
 function nombreArchivo(nombre) {
@@ -2887,7 +2944,7 @@ function nombreArchivo(nombre) {
 }
 
 // PDF de la carta completa, con logo y el nombre de la persona.
-function generar(registro, { ahora = new Date(), logo = null, enlaces = {} } = {}) {
+function generar(registro, { ahora = new Date(), logo = null, enlaces = {}, pago = null } = {}) {
   const r = new Redactor();
   let imagen = null;
   if (logo) {
@@ -2900,11 +2957,12 @@ function generar(registro, { ahora = new Date(), logo = null, enlaces = {} } = {
   r.parrafo([t('Estatutos gremiales: ', true), t(ESTATUTOS_INTRO)], { despues: 6 });
   for (const l of listaEstatutos(enlaces)) r.parrafo([t(l)], { despues: 4, tam: 9, sangria: 10 });
   r.espacio(8);
-  if (PAGO) {
+  if (pago) {
     r.reservar(170); // la cuota y los datos de la cuenta no se separan entre páginas
-    r.parrafo([t('Cuota social: ', true), t(PAGO.cuota)], { despues: 8 });
+    r.parrafo([t('Cuota social: ', true), t(pago.cuota)], { despues: 8 });
     r.parrafo([t('Datos para transferencia:', true)], { despues: 4 });
-    for (const [rotulo, valor] of PAGO.datos) r.parrafo([t(rotulo + ': ', true), t(valor)], { despues: 2, sangria: 10 });
+    const datos = [['Titular', pago.titular], ['RUT', pago.rut], ['Banco', pago.banco], [pago.tipoCuenta, pago.cuenta], ['Correo para comprobantes', pago.correo]];
+    for (const [rotulo, valor] of datos) r.parrafo([t(rotulo + ': ', true), t(valor)], { despues: 2, sangria: 10 });
     r.espacio(12);
   }
   r.reservar(120); // el título y la lista del Directorio no se separan entre páginas

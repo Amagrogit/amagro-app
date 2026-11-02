@@ -125,7 +125,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -233,6 +233,7 @@
         <button class="item" role="menuitem" id="verDuplicados">Duplicados<small>Dejar la postulación más reciente y marcar las otras</small></button>
         <button class="item" role="menuitem" id="verHistorial">Historial de cambios<small>Quién cambió qué y cuándo</small></button>
         <button class="item" role="menuitem" id="respaldo">Respaldo de correcciones<small>Descargar o restaurar los cambios</small></button>
+        <button class="item" role="menuitem" id="verPago" hidden>Datos de pago<small>La cuota y la cuenta que lleva la carta de bienvenida</small></button>
         <button class="item" role="menuitem" id="verComisiones" hidden>Comisiones<small>Crear, renombrar o borrar comisiones de trabajo</small></button>
         <button class="item" role="menuitem" id="verUsuarias" hidden>Usuarias y categorías<small>Crear cuentas y definir quién puede hacer qué</small></button>
         <button class="item" role="menuitem" id="cambiarMiClave">Cambiar mi contraseña<small>Elegir una contraseña nueva</small></button>
@@ -268,6 +269,24 @@
   <div id="avisoMigracion" class="aviso" role="alert" hidden>
     <b>Hay correcciones guardadas solo en este computador.</b> <span id="migracionTexto"></span>
     <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
+  </div>
+  <div id="panelPago" class="aviso" hidden>
+    <b>Datos de pago</b>
+    <div class="sub" style="margin:2px 0 6px">La cuota y la cuenta de AMAGRO que aparecen en la carta de bienvenida. Las cartas que se preparen desde ahora llevan los datos que dejes aquí; las que ya se enviaron no cambian.</div>
+    <form id="formPago" autocomplete="off" style="display:grid;gap:8px;max-width:560px">
+      <label>Cuota social<br><textarea id="pgCuota" rows="3" required maxlength="400" style="width:100%"></textarea></label>
+      <label>Titular de la cuenta<br><input id="pgTitular" required maxlength="120" style="width:100%"></label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label style="flex:1 1 150px">RUT del titular<br><input id="pgRut" required maxlength="20" style="width:100%"></label>
+        <label style="flex:1 1 150px">Banco<br><input id="pgBanco" required maxlength="60" style="width:100%"></label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label style="flex:1 1 150px">Tipo de cuenta<br><select id="pgTipo" style="width:100%"></select></label>
+        <label style="flex:1 1 150px">Número de cuenta<br><input id="pgCuenta" required maxlength="30" inputmode="numeric" style="width:100%"></label>
+      </div>
+      <label>Correo para comprobantes<br><input id="pgCorreo" type="email" required maxlength="120" style="width:100%"></label>
+      <div><button type="submit">Guardar</button> <span id="pgEstado" class="sub"></span></div>
+    </form>
   </div>
   <div id="panelComisiones" class="aviso" hidden>
     <b>Comisiones</b>
@@ -640,9 +659,9 @@
 </div>
 
 <script src="config.js?v=c8ec37a6"></script>
-<script src="app.js?v=c3315ea0"></script>
+<script src="app.js?v=95808018"></script>
 <script src="mensaje.js?v=dc41d3e0"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=eaa1419e"></script>
+<script src="ui.js?v=437d4e60"></script>
 </body>
 </html>
