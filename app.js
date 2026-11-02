@@ -273,6 +273,8 @@ const PASOS = [
   { id: 'revisada', etiqueta: 'Revisada por secretaría' },
   { id: 'aprobada', etiqueta: 'Aprobada por el directorio' },
   { id: 'bienvenida', etiqueta: 'Bienvenida enviada' },
+  { id: 'invitadaGrupo', etiqueta: 'Invitada al grupo de WhatsApp', ayuda: 'Se le envió el enlace de invitación al grupo' },
+  { id: 'enGrupo', etiqueta: 'Incorporada al grupo de WhatsApp', ayuda: 'Ya entró al grupo: en el grupo aparece «se unió usando el enlace»' },
   { id: 'cuota', etiqueta: 'Primera cuota pagada' },
 ];
 const IDS = PASOS.map(p => p.id);
@@ -759,8 +761,17 @@ function validarCampos(cambios) {
 
 // Valida un archivo de respaldo completo: { [clave]: { campos: {...}, modificado } }.
 // Se reconstruye desde cero con los valores ya validados, así no entra nada inesperado.
+// Formato nuevo: { formato: 'amagro-respaldo', version: 2, creado, correcciones: {...}, pagos: [...] }. Formato antiguo: solo las correcciones.
+// Los pagos del archivo se guardan para resguardo: restaurar el archivo repone las correcciones, no toca los pagos.
+const FORMATO_RESPALDO = 'amagro-respaldo';
 function validarRespaldo(datos) {
   if (!datos || typeof datos !== 'object' || Array.isArray(datos)) return { error: 'El archivo no es un respaldo de correcciones.' };
+  let pagosEnArchivo = 0;
+  if (datos.formato === FORMATO_RESPALDO) {
+    if (!datos.correcciones || typeof datos.correcciones !== 'object' || Array.isArray(datos.correcciones)) return { error: 'El archivo no es un respaldo de correcciones.' };
+    pagosEnArchivo = Array.isArray(datos.pagos) ? datos.pagos.length : 0;
+    datos = datos.correcciones;
+  }
   const limpio = {};
   for (const [clave, entrada] of Object.entries(datos)) {
     // Cada entrada trae correcciones (campos), pasos de admisión, o ambos. Los respaldos antiguos solo traen campos.
@@ -775,7 +786,7 @@ function validarRespaldo(datos) {
       modificado: typeof entrada.modificado === 'string' ? entrada.modificado : new Date().toISOString(),
     };
   }
-  return { respaldo: limpio };
+  return { respaldo: limpio, pagosEnArchivo };
 }
 
 // Decide si hay que recordar que se descargue un respaldo. Avisa solo cuando hay correcciones
@@ -794,7 +805,7 @@ function avisoRespaldo(ediciones, ultimoRespaldo, ahora = new Date(), umbralDias
   return dias >= umbralDias ? { dias, pendientes: pendientes.length, nunca: !ref } : null;
 }
 
-module.exports = { validarCampos, validarRespaldo, avisoRespaldo };
+module.exports = { FORMATO_RESPALDO, validarCampos, validarRespaldo, avisoRespaldo };
 
 });
 
@@ -1286,6 +1297,15 @@ class Almacen {
     return new Map((Array.isArray(datos) ? datos : []).map(p => [p.id, !!p.gestiona_pagos]));
   }
 
+  // ---- Ajustes sueltos de la configuración (el enlace del grupo de WhatsApp, etc.): los lee el personal; solo la administradora los cambia ----
+  async leerAjuste(clave) {
+    const { datos } = await this.sesion.pedir('GET', `configuracion?select=valor&clave=eq.${filtro(clave)}`);
+    return datos && datos[0] ? datos[0].valor : null;
+  }
+  async guardarAjuste(clave, valor) {
+    await this.sesion.pedir('POST', 'configuracion?on_conflict=clave', { cuerpo: { clave, valor, actualizado: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
+  }
+
   // ---- Datos de pago (cuota y cuenta de AMAGRO): los lee el personal; solo la administradora los cambia (lo exige la base) ----
   async leerDatosPago() {
     const { datos } = await this.sesion.pedir('GET', 'configuracion?select=valor&clave=eq.datos_pago');
@@ -1638,7 +1658,7 @@ const { procesarCSV } = require('./procesar');
 const { urlExportacion } = require('./hoja');
 const { REGIONES } = require('./normalizar');
 const { ETAPAS } = require('./etapas');
-const { validarCampos, validarRespaldo, avisoRespaldo } = require('./ediciones');
+const { validarCampos, validarRespaldo, avisoRespaldo, FORMATO_RESPALDO } = require('./ediciones');
 const { PASOS, PLAZO_RESPUESTA_DIAS, validarPaso, hoyISO } = require('./pasos');
 const { ErrorSupabase } = require('./supabase');
 const { leerSocias, planificar, camposAAplicar } = require('./socias');
@@ -1649,6 +1669,7 @@ const bienvenida = require('./cartaBienvenida');
 const CM = require('./comisiones');
 const PAGO = require('./pago');
 const PG = require('./pagos');
+const GRUPO = require('./grupo');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1771,6 +1792,9 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     };
     return { hoy: PG.hoyISO(hoy), mesActual: mes, inicio: PG.INICIO, cuotaReferencia: PG.CUOTA_REFERENCIA, medios: PG.MEDIOS, puedeRegistrar: sesion.puedePagos(), filas, resumen };
   };
+
+  // El enlace del grupo de WhatsApp sale de la configuración; si falta o no se puede leer, la carta sale sin la invitación.
+  const enlaceGrupo = async () => GRUPO.leer(await almacen.leerAjuste(GRUPO.CLAVE).catch(() => null));
 
   // Los datos de pago salen de la configuración de la base; si faltan o no se pueden leer, la carta sale sin ellos (y lo avisa).
   const datosPago = async () => PAGO.leer(await almacen.leerDatosPago().catch(() => null));
@@ -2144,13 +2168,17 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     // Estado del respaldo, para mostrarlo en el panel.
     if (ruta === 'GET /api/respaldo/info') {
       const ediciones = await almacen.leerEdiciones();
+      const pagosRegistrados = await almacen.listarPagos().catch(() => []); // si la tabla todavía no existe, el respaldo sigue funcionando sin pagos
       const { ultimoRespaldo } = E.config();
+      // Para el recordatorio, cada pago registrado cuenta como un cambio a respaldar.
+      const cambios = { ...ediciones, ...Object.fromEntries(pagosRegistrados.map(p => ['pago:' + p.id, { modificado: p.creado_en }])) };
       return ok({
         correcciones: Object.keys(ediciones).length,
+        pagos: pagosRegistrados.length,
         copias: E.copias ? E.copias() : 0,
         ultima: null,
         ultimoRespaldo: ultimoRespaldo || null,
-        aviso: avisoRespaldo(ediciones, ultimoRespaldo),
+        aviso: avisoRespaldo(cambios, ultimoRespaldo),
         puedeRestaurar: sesion.esAdmin(),
       });
     }
@@ -2158,9 +2186,11 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     // Descarga las correcciones actuales como archivo y anota cuándo, para el recordatorio.
     if (ruta === 'GET /api/respaldo') {
       const ediciones = await almacen.leerEdiciones();
+      const pagosRegistrados = await almacen.listarPagos().catch(() => []);
       E.guardarConfig({ ...E.config(), ultimoRespaldo: new Date().toISOString() });
-      const dia = new Date().toISOString().slice(0, 10);
-      return { estado: 200, texto: JSON.stringify(ediciones, null, 2), tipo: 'application/json; charset=utf-8', cabeceras: { 'Content-Disposition': `attachment; filename="amagro-correcciones-${dia}.json"` } };
+      const ahora = new Date().toISOString(), dia = ahora.slice(0, 10);
+      const archivo = { formato: FORMATO_RESPALDO, version: 2, creado: ahora, correcciones: ediciones, pagos: pagosRegistrados };
+      return { estado: 200, texto: JSON.stringify(archivo, null, 2), tipo: 'application/json; charset=utf-8', cabeceras: { 'Content-Disposition': `attachment; filename="amagro-respaldo-${dia}.json"` } };
     }
 
     // Deja las correcciones iguales al archivo de respaldo (reemplaza TODO, para todas las usuarias).
@@ -2169,11 +2199,11 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede restaurar un respaldo.');
       let datos;
       try { datos = JSON.parse(cuerpo); } catch { return fallo(400, 'El archivo no es un JSON válido.'); }
-      const { respaldo, error } = validarRespaldo(datos);
+      const { respaldo, error, pagosEnArchivo } = validarRespaldo(datos);
       if (error) return fallo(400, error);
       if (E.copiaLocal) await E.copiaLocal(await almacen.leerEdiciones());
       const r = await almacen.reemplazarTodo(respaldo);
-      return ok({ ...r, ...(await datosActuales()) });
+      return ok({ ...r, pagosEnArchivo, ...(await datosActuales()) });
     }
 
     // Carta de solicitud en PDF, prellenada con los datos actuales de la ficha (incluidas las correcciones).
@@ -2226,6 +2256,20 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       return ok(await armarPagos());
     }
 
+    // ---------- Grupo de WhatsApp de las socias ----------
+    if (ruta === 'GET /api/grupo-whatsapp') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede ver el enlace del grupo.');
+      return ok({ enlace: await enlaceGrupo() });
+    }
+    if (ruta === 'POST /api/grupo-whatsapp') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar el enlace del grupo.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const v = GRUPO.validar(a.cuerpo);
+      if (v.error) return fallo(400, v.error);
+      await almacen.guardarAjuste(GRUPO.CLAVE, v.limpio);
+      return ok({ enlace: v.limpio.enlace || null });
+    }
+
     // ---------- Datos de pago (cuota y cuenta de AMAGRO) ----------
     // Salen de la configuración de la base: la administradora los cambia aquí y la carta de bienvenida los toma de ahí.
     if (ruta === 'GET /api/datos-pago') {
@@ -2259,7 +2303,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
       if (!paginaSubida()) return fallo(400, 'Falta configurar la dirección de la página de subida (paginaSubida).');
-      await almacen.prepararBienvenida(registro.clave, await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos(), pago: await datosPago() }));
+      await almacen.prepararBienvenida(registro.clave, await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos(), pago: await datosPago(), grupo: await enlaceGrupo() }));
       const e = await almacen.crearEnlaceBienvenida(registro.clave, 60);
       return ok({ url: urlPagina(`/bienvenida.html#${e.token}`), vence_en: e.vence_en });
     }
@@ -2269,7 +2313,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       const registro = await buscarRegistro((a.cuerpo || {}).clave);
       if (!registro) return fallo(404, NO_ENCONTRADA);
       if (!(registro.pasos && registro.pasos.aprobada)) return fallo(400, 'La carta de bienvenida se prepara cuando la postulación tiene marcado el paso «Aprobada por el directorio».');
-      return { estado: 200, bytes: await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos(), pago: await datosPago() }), tipo: 'application/pdf',
+      return { estado: 200, bytes: await bienvenida.generar(registro, { logo: await E.logo(), enlaces: enlacesEstatutos(), pago: await datosPago(), grupo: await enlaceGrupo() }), tipo: 'application/pdf',
         cabeceras: { 'Content-Disposition': 'attachment; filename="' + bienvenida.nombreArchivo(registro.nombre) + '"', 'Cache-Control': 'no-store' } };
     }
 
@@ -3046,6 +3090,33 @@ module.exports = { INICIO, CUOTA_REFERENCIA, MEDIOS, MAX_MESES, esMes, mesDe, su
 
 });
 
+definir("lib/grupo", function (module, exports, require, __dirname, Buffer) {
+// Enlace de invitación al grupo de WhatsApp de las socias. Se guarda en la configuración de la base (clave «grupo_whatsapp»),
+// no en el código: la administradora lo cambia desde ⚙ → Grupo de WhatsApp y lo lleva la carta de bienvenida.
+// Un enlace de grupo es solo un enlace: WhatsApp no avisa cuando alguien entra, así que «Invitada» y «Incorporada» las marca una persona.
+const CLAVE = 'grupo_whatsapp';
+const PATRON = /^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]{10,40}$/;
+
+// Valida lo que llega de la pantalla. Un enlace vacío significa «sin enlace» (la carta sale sin la invitación).
+function validar(entrada) {
+  if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) return { error: 'Los datos del grupo no son válidos.' };
+  const crudo = String(entrada.enlace == null ? '' : entrada.enlace).trim();
+  if (!crudo) return { limpio: { enlace: '' } };
+  const enlace = crudo.split(/[?#]/)[0].replace(/\/+$/, ''); // sin parámetros ni barra final
+  if (!PATRON.test(enlace)) return { error: 'Ese no parece un enlace de invitación de grupo de WhatsApp (debe empezar con https://chat.whatsapp.com/).' };
+  return { limpio: { enlace } };
+}
+
+// Lo guardado en la base; si falta, está vacío o dañado, no hay enlace.
+function leer(valor) {
+  const v = validar(valor);
+  return v.limpio && v.limpio.enlace ? v.limpio.enlace : null;
+}
+
+module.exports = { CLAVE, validar, leer };
+
+});
+
 definir("lib/cartaBienvenida", function (module, exports, require, __dirname, Buffer) {
 // Carta de bienvenida a quien el Directorio aprobó. Tiene dos formas, con el mismo texto (revisado por el Directorio):
 //  - el PDF con logo y el nombre de la persona (varias páginas), que ella descarga desde un enlace único; y
@@ -3119,7 +3190,7 @@ function nombreArchivo(nombre) {
 }
 
 // PDF de la carta completa, con logo y el nombre de la persona.
-function generar(registro, { ahora = new Date(), logo = null, enlaces = {}, pago = null } = {}) {
+function generar(registro, { ahora = new Date(), logo = null, enlaces = {}, pago = null, grupo = null } = {}) {
   const r = new Redactor();
   let imagen = null;
   if (logo) {
@@ -3132,6 +3203,12 @@ function generar(registro, { ahora = new Date(), logo = null, enlaces = {}, pago
   r.parrafo([t('Estatutos gremiales: ', true), t(ESTATUTOS_INTRO)], { despues: 6 });
   for (const l of listaEstatutos(enlaces)) r.parrafo([t(l)], { despues: 4, tam: 9, sangria: 10 });
   r.espacio(8);
+  if (grupo) {
+    r.reservar(110);
+    r.parrafo([t('Grupo de WhatsApp de las socias: ', true), t('te invitamos a ser parte del grupo de WhatsApp de AMAGRO, donde compartimos novedades, actividades y avisos importantes. Puedes entrar con este enlace:')], { despues: 4 });
+    r.parrafo([t(grupo)], { despues: 4, tam: 9, sangria: 10 });
+    r.parrafo([t('Al entrar quedarás en espera hasta que una administradora del grupo apruebe tu ingreso; puede tardar un poco.')], { despues: 10 });
+  }
   if (pago) {
     r.reservar(170); // la cuota y los datos de la cuenta no se separan entre páginas
     r.parrafo([t('Cuota social: ', true), t(pago.cuota)], { despues: 8 });

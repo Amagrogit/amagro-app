@@ -80,13 +80,13 @@ const ETAPAS_PESTANA = {
 };
 const CONTROLES_PESTANA = {
   postulantes: ['etapa', 'periodo', 'filtro', 'region'],
-  socias: ['filtroCargo', 'filtroComision', 'filtroPago', 'region'],
+  socias: ['filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'region'],
   otras: ['etapa', 'filtroAnio', 'region'],
 };
-const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'filtroAnio', 'region'];
+const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region'];
 const COLUMNAS_PESTANA = {
   postulantes: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>',
-  socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th>Pago</th>',
+  socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th title="Grupo de WhatsApp de las socias">Grupo</th><th>Pago</th>',
   otras: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th>Observaciones</th>',
 };
 // Las postulaciones marcadas como no activas (por ejemplo, las antiguas) pasan a «Otras», sea cual sea su etapa.
@@ -163,6 +163,7 @@ function filaSocia(d) {
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
       <td>${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${cargos}${comisiones}</td>
+      <td>${celdaGrupo(d)}</td>
       <td>${pago}</td>
     </tr>`;
 }
@@ -187,7 +188,7 @@ function resumenPestana(vis) {
   const t = (n, texto, clase = '') => `<div class="tarjeta ${clase}"><div class="n">${n}</div>${texto}</div>`;
   if (pestana === 'socias') {
     const estados = pagos ? mias.map(d => (pagoDe(d.clave) || {}).estado) : [];
-    return t(mias.length, 'socias') + t(mias.filter(d => d.fundadora).length, 'fundadoras') + t(mias.filter(d => d.cargosDetalle.length).length, 'con cargo') + t(mias.filter(d => d.comisiones.length).length, 'en alguna comisión')
+    return t(mias.length, 'socias') + t(mias.filter(d => d.fundadora).length, 'fundadoras') + t(mias.filter(d => d.cargosDetalle.length).length, 'con cargo') + t(mias.filter(d => d.comisiones.length).length, 'en alguna comisión') + t(mias.filter(d => estadoGrupo(d) === 'en').length, 'en el grupo de WhatsApp', 'bien') + t(mias.filter(d => estadoGrupo(d) === 'sin').length, 'sin invitar al grupo')
       + (pagos ? t(estados.filter(e => e === 'al-dia').length, 'al día', 'bien') + t(estados.filter(e => e === 'pendiente' || e === 'atrasada').length, 'pendientes o atrasadas', 'mal') : '');
   }
   if (pestana === 'otras') return t(mias.length, 'en total') + t(mias.filter(d => d.etapa === 'Renuncia').length, 'renunciaron') + t(mias.filter(d => d.etapa === 'No califica').length, 'no califican') + t(mias.filter(d => d.inactiva).length, 'no activas (postulaciones antiguas)');
@@ -207,7 +208,7 @@ function chipsComisionLista(d, fcom) {
   return c ? chip(c, coord(c) ? '★ Coordinadora' : 'Integrante') : '';
 }
 function pintar() {
-  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value, fa = $('filtroAnio').value;
+  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value, fa = $('filtroAnio').value, fg = $('filtroGrupo').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
@@ -217,6 +218,7 @@ function pintar() {
     (f === 'marcadas' || f === 'inactivas' || enPestana(d)) && // los filtros «no activas» y «duplicadas» miran todas las etapas
     (!fp || (pagoDe(d.clave) || {}).estado === fp) &&
     (!fa || anioDe(d) === fa) &&
+    (!fg || estadoGrupo(d) === fg) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
@@ -255,7 +257,7 @@ function pintar() {
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
-    </tr>`).join('') : '<tr><td colspan="' + (pestana === 'postulantes' ? 10 : 8) + '" class="vacio">Sin resultados</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="' + (pestana === 'postulantes' ? 10 : pestana === 'socias' ? 9 : 8) + '" class="vacio">Sin resultados</td></tr>';
   actualizarSeleccion(vis);
 }
 
@@ -1391,7 +1393,7 @@ document.addEventListener('keydown', e => {
   if (editando) abrirFicha(seleccion); else cerrarFicha();
 });
 
-['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'filtroAnio', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
+['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
 
 // Orden por columna. Cada clic en el mismo encabezado recorre: primera dirección -> la opuesta -> sin orden.
 // La fecha parte con las más recientes arriba; el nombre, de la A a la Z.
@@ -1429,7 +1431,7 @@ async function post(url, cuerpo) {
 }
 
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
-const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones', 'panelPago'];
+const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones', 'panelPago', 'panelGrupo'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
 // Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
 PANELES.forEach(id => {
@@ -1499,7 +1501,7 @@ async function cargarInfoRespaldo() {
   try {
     const i = await (await fetch('/api/respaldo/info')).json();
     const bajado = i.ultimoRespaldo ? new Date(i.ultimoRespaldo).toLocaleString('es-CL') : 'nunca';
-    $('respaldoInfo').textContent = `${i.correcciones} postulación(es) con correcciones o pasos registrados · último respaldo descargado en este computador: ${bajado}`;
+    $('respaldoInfo').textContent = `${i.correcciones} postulación(es) con correcciones o pasos registrados · ${i.pagos || 0} pago(s) registrado(s) · último respaldo descargado en este computador: ${bajado}`;
     $('subirRespaldoLabel').hidden = !i.puedeRestaurar;
   } catch { $('respaldoInfo').textContent = 'No se pudo leer el estado del respaldo.'; }
 }
@@ -1512,8 +1514,8 @@ function mostrarAvisoRespaldo(aviso) {
   if (!aviso || avisoPospuesto) { caja.hidden = true; return; }
   const n = aviso.pendientes;
   $('avisoRespaldoTexto').textContent = aviso.nunca
-    ? `Tienes ${n} postulación(es) con correcciones y nunca has descargado un respaldo (la primera tiene ${aviso.dias} días).`
-    : `Hace ${aviso.dias} días que no descargas un respaldo, y tienes ${n} postulación(es) con cambios desde entonces.`;
+    ? `Tienes ${n} cambio(s) (correcciones o pagos) y nunca has descargado un respaldo (el primero tiene ${aviso.dias} días).`
+    : `Hace ${aviso.dias} días que no descargas un respaldo, y tienes ${n} cambio(s) (correcciones o pagos) desde entonces.`;
   caja.hidden = false;
 }
 async function revisarAvisoRespaldo() {
@@ -1524,7 +1526,7 @@ async function revisarAvisoRespaldo() {
 async function descargarRespaldo() {
   const r = await fetch('/api/respaldo');
   if (!r.ok) { const j = await r.json().catch(() => ({})); return mostrar(j.error || 'No se pudo descargar el respaldo.', true); }
-  const nombre = ((r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'amagro-correcciones.json';
+  const nombre = ((r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/) || [])[1] || 'amagro-respaldo.json';
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement('a');
   a.href = url; a.download = nombre;
@@ -1553,7 +1555,7 @@ $('archivoRespaldo').addEventListener('change', async e => {
   if (r.error) return mostrar(r.error, true);
   cerrarPaneles();
   cargar(r, true);
-  mostrar(`Respaldo restaurado: ${r.restauradas} postulación(es) con correcciones.`);
+  mostrar(`Respaldo restaurado: ${r.restauradas} postulación(es) con correcciones.` + (r.pagosEnArchivo ? ` Los ${r.pagosEnArchivo} pago(s) del archivo no se restauran desde aquí: los pagos actuales quedaron como estaban.` : ''));
 });
 
 $('archivo').addEventListener('change', async e => {
@@ -1847,6 +1849,7 @@ async function entrarALaApp(usuario) {
   $('verUsuarias').hidden = !esAdmin;
   $('verComisiones').hidden = !esAdmin;
   $('verPago').hidden = !esAdmin;
+  $('verGrupo').hidden = !esAdmin;
   $('usuario').textContent = usuario ? usuario.nombre + ' · ' + (ROL[usuario.rol] || usuario.rol) : '';
   const r = await fetch('/api/postulaciones');
   if (r.ok) { cargar(await r.json()); revisarMigracion(); if (puedeEditarRol(usuario.rol)) iniciarConsultaPendientes(); }
@@ -2061,6 +2064,47 @@ $('usuariasLista').addEventListener('click', async e => {
     mostrarClaveTemporal(nombre, correo, r.clave, { rol: fila.querySelector('[data-usuaria-rol]').value, nueva: false });
     await cargarUsuarias();
   }
+});
+
+// ---- Grupo de WhatsApp de las socias ----
+// WhatsApp no avisa cuando alguien entra al grupo: «Invitada» y «Incorporada» las marca una persona (el estado sale de los pasos de la ficha).
+const estadoGrupo = d => (d.pasos.enGrupo ? 'en' : d.pasos.invitadaGrupo ? 'invitada' : 'sin');
+function celdaGrupo(d) {
+  const e = estadoGrupo(d);
+  const boton = (paso, texto, titulo) => `<button class="btn-peq enviar-carta" data-grupo-paso="${paso}" data-grupo-clave="${esc(d.clave)}" title="${esc(titulo)}">${texto}</button>`;
+  if (e === 'en') return `<span class="chip ok" title="Incorporada el ${esc(fechaCL(d.pasos.enGrupo.fecha))}">En el grupo</span>`;
+  if (e === 'invitada') return `<span class="chip pend" title="Invitada el ${esc(fechaCL(d.pasos.invitadaGrupo.fecha))}">Invitada</span>${boton('enGrupo', '✓ Ya entró', 'Marca que ya está en el grupo')}`;
+  return `<span class="chip" title="Todavía no se le ha enviado la invitación">Sin invitar</span>${boton('invitadaGrupo', '✉ Invitada', 'Marca que se le envió la invitación al grupo')}${boton('ambos', '✓ Ya está en el grupo', 'Marca que ya está dentro (por ejemplo, una socia antigua)')}`;
+}
+async function marcarPasoGrupo(clave, paso) {
+  const hoy = hoyLocalISO();
+  for (const id of paso === 'ambos' ? ['invitadaGrupo', 'enGrupo'] : [paso]) {
+    const r = await post('/api/paso', { clave, paso: id, hecho: true, fecha: hoy, nota: 'marcado desde la lista' });
+    if (r.error) return mostrar(r.error, true);
+    cargar(r, true);
+  }
+  mostrar(paso === 'invitadaGrupo' ? 'Anotado: invitada al grupo.' : 'Anotado: ya está en el grupo.');
+}
+$('filas').addEventListener('click', e => {
+  const b = e.target.closest('[data-grupo-paso]');
+  if (b) marcarPasoGrupo(b.dataset.grupoClave, b.dataset.grupoPaso);
+});
+
+// Panel de la administradora (⚙ → Grupo de WhatsApp): el enlace de invitación que lleva la carta de bienvenida.
+async function cargarPanelGrupo() {
+  $('grEstado').textContent = 'Cargando…';
+  const r = await (await fetch('/api/grupo-whatsapp')).json().catch(() => ({ error: 'No se pudo cargar el enlace.' }));
+  if (r.error) { $('grEstado').textContent = r.error; return; }
+  $('grEnlace').value = r.enlace || '';
+  $('grEstado').textContent = r.enlace ? '' : 'Todavía no hay enlace guardado: la carta de bienvenida sale sin la invitación al grupo.';
+}
+$('verGrupo').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelGrupo')) cargarPanelGrupo(); });
+$('formGrupo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const r = await post('/api/grupo-whatsapp', { enlace: $('grEnlace').value });
+  if (r.error) return mostrar(r.error, true);
+  mostrar(r.enlace ? 'Enlace guardado. La carta de bienvenida lo llevará desde ahora.' : 'Enlace quitado: la carta sale sin la invitación al grupo.');
+  cargarPanelGrupo();
 });
 
 // ---- Pagos de las socias ----

@@ -139,7 +139,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -247,7 +247,8 @@
         <button class="item" role="menuitem" id="importarSocias" hidden>Importar planilla de socias<small>Actualizar el listado con la lista de AMAGRO</small></button>
         <button class="item" role="menuitem" id="verDuplicados">Duplicados<small>Dejar la postulación más reciente y marcar las otras</small></button>
         <button class="item" role="menuitem" id="verHistorial">Historial de cambios<small>Quién cambió qué y cuándo</small></button>
-        <button class="item" role="menuitem" id="respaldo">Respaldo de correcciones<small>Descargar o restaurar los cambios</small></button>
+        <button class="item" role="menuitem" id="respaldo">Respaldo<small>Descargar las correcciones y los pagos, o restaurar</small></button>
+        <button class="item" role="menuitem" id="verGrupo" hidden>Grupo de WhatsApp<small>El enlace de invitación que lleva la carta de bienvenida</small></button>
         <button class="item" role="menuitem" id="verPago" hidden>Datos de pago<small>La cuota y la cuenta que lleva la carta de bienvenida</small></button>
         <button class="item" role="menuitem" id="verComisiones" hidden>Comisiones<small>Crear, renombrar o borrar comisiones de trabajo</small></button>
         <button class="item" role="menuitem" id="verUsuarias" hidden>Usuarias y categorías<small>Crear cuentas y definir quién puede hacer qué</small></button>
@@ -284,6 +285,16 @@
   <div id="avisoMigracion" class="aviso" role="alert" hidden>
     <b>Hay correcciones guardadas solo en este computador.</b> <span id="migracionTexto"></span>
     <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
+  </div>
+  <div id="panelGrupo" class="aviso" hidden>
+    <b>Grupo de WhatsApp de las socias</b>
+    <div class="sub" style="margin:2px 0 6px">El enlace de invitación va en la carta de bienvenida (en la carta completa, no en el correo). WhatsApp no avisa cuando alguien entra: «Invitada» y «Ya entró» se marcan a mano, en la ficha o en la columna «Grupo» de la pestaña Socias.
+    <b>Recomendación:</b> en el grupo, activa «Aprobar nuevos participantes» (Info. del grupo → Configuración), así quien abra el enlace queda en espera hasta que una administradora la acepte. Y conviene que el grupo lo administren al menos dos personas de AMAGRO.</div>
+    <form id="formGrupo" autocomplete="off" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;max-width:640px">
+      <label style="flex:1 1 360px">Enlace de invitación<br><input id="grEnlace" maxlength="200" placeholder="https://chat.whatsapp.com/…" style="width:100%"></label>
+      <button type="submit">Guardar</button>
+    </form>
+    <div class="sub" id="grEstado" style="margin-top:6px"></div>
   </div>
   <div id="panelPago" class="aviso" hidden>
     <b>Datos de pago</b>
@@ -411,7 +422,7 @@
       <ul>
         <li><b>Importar planilla de socias</b> (⚙): actualiza el listado con la lista oficial de AMAGRO. Primero muestra una <b>vista previa</b>; no guarda nada hasta que pulses <b>Aplicar cambios</b>, y cada ficha se puede deshacer.</li>
         <li><b>Duplicados</b> (⚙): deja como principal la postulación más reciente de cada persona repetida (socias, o mismo RUT y nombre equivalente) y marca las otras como duplicadas (no se borra nada; en su ficha: <b>Quitar la marca</b>).</li>
-  <li><b>Respaldo de correcciones</b> (⚙): descarga un archivo con todas las correcciones y pasos. Conviene hacerlo cada cierto tiempo y guardarlo fuera del computador. Restaurar un respaldo reemplaza todo: úsalo solo si hay un problema grave.</li>
+  <li><b>Respaldo</b> (⚙): descarga un archivo con todas las correcciones, los pasos y los pagos. Conviene hacerlo cada cierto tiempo y guardarlo fuera del computador. Restaurar un respaldo reemplaza todo: úsalo solo si hay un problema grave.</li>
         <li><b>Enlace de la planilla</b> (⚙): la dirección de la planilla de Google de donde se descargan las postulaciones.</li>
         <li><b>Historial de cambios</b> (⚙): quién cambió qué y cuándo, en toda la aplicación o en una ficha.</li>
       </ul>
@@ -478,10 +489,11 @@
     <button id="guardarUrl">Guardar</button>
   </div>
   <div id="panelRespaldo" class="aviso" hidden>
-    <b>Respaldo de correcciones</b><br>
+    <b>Respaldo de correcciones y pagos</b><br>
     <span id="respaldoInfo">Cargando…</span><br>
-    <small>Las correcciones y los pasos se guardan en la base de datos compartida (Supabase) y cada cambio queda en el historial.
-    Aun así, descarga un respaldo de vez en cuando y guárdalo en un lugar seguro. Restaurar un archivo reemplaza todo y solo lo puede hacer la administradora.</small><br>
+    <small>Las correcciones, los pasos y los pagos se guardan en la base de datos compartida (Supabase) y cada cambio queda en el historial.
+    Como esa base no tiene copias automáticas, descarga un respaldo de vez en cuando (sobre todo después de registrar pagos) y guárdalo fuera del computador, por ejemplo en Drive.
+    El archivo trae las correcciones y los pagos. Restaurar un archivo repone las correcciones (reemplaza todo) y no cambia los pagos; solo lo puede hacer la administradora.</small><br>
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
       <button id="bajarRespaldo">Descargar respaldo</button>
       <label class="boton" id="subirRespaldoLabel" hidden>Restaurar desde un archivo</label>
@@ -520,6 +532,7 @@
     <select id="filtroCargo" title="Filtrar por cargo o por condición de socia fundadora"><option value="">Cargos: todos</option></select>
     <select id="filtroComision" title="Filtrar por comisión"><option value="">Con o sin comisiones</option></select>
     <select id="filtroAnio" title="Filtrar por año de postulación"><option value="">Todos los años</option></select>
+    <select id="filtroGrupo" title="Filtrar por el grupo de WhatsApp de las socias"><option value="">Grupo: todas</option><option value="sin">Sin invitar</option><option value="invitada">Invitadas (aún no entran)</option><option value="en">En el grupo</option></select>
     <select id="filtroPago" title="Filtrar por estado de la cuota"><option value="">Todos los pagos</option><option value="al-dia">Al día</option><option value="pendiente">Pendiente</option><option value="atrasada">Atrasada</option></select>
     <select id="region"><option value="">Todas las regiones</option></select>
     <datalist id="listaCargos"></datalist>
@@ -709,9 +722,9 @@
 </div>
 
 <script src="config.js?v=c8ec37a6"></script>
-<script src="app.js?v=a2363a82"></script>
+<script src="app.js?v=bd1af1d6"></script>
 <script src="mensaje.js?v=dc41d3e0"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=5e3b06ec"></script>
+<script src="ui.js?v=767a9925"></script>
 </body>
 </html>
