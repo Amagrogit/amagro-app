@@ -2809,7 +2809,7 @@ definir("lib/cartaBienvenida", function (module, exports, require, __dirname, Bu
 //  - un correo corto que le avisa y le da ese enlace, más los enlaces a los estatutos.
 //
 // PENDIENTE: la información de la cuota social y los datos para pagar. Se agregará cuando se defina la forma de pago
-// (por ejemplo, con Flow). Para sumarla basta con poner texto en SECCION_PAGO: va en el PDF y en el correo.
+// (por ejemplo, con Flow). La cuota y los datos de la cuenta están en PAGO y van en el PDF.
 const { titulo } = require('./carta');
 const { crearPdfPaginas, leerImagen } = require('./pdf');
 const { Redactor, t } = require('./redactor');
@@ -2818,7 +2818,17 @@ const { sinTildes } = require('./normalizar');
 
 const ASUNTO = '¡Bienvenida a AMAGRO AG!';
 const MARCA_CARTA = '[ENLACE_CARTA_BIENVENIDA]'; // en el texto del correo; se reemplaza por el enlace único al enviarlo
-const SECCION_PAGO = null; // ej.: 'Cuota social: ...\n\nDatos para el pago: ...'
+// Cuota y datos para pagar, tal como los aprobó el Directorio (Word «RevMTL»). Van en la carta completa (el PDF); el correo es corto y no los repite.
+const PAGO = {
+  cuota: '$10.000 mensuales. Agradecemos, en lo posible, realizar pagos trimestrales, semestrales o anuales para facilitar la gestión administrativa.',
+  datos: [
+    ['Titular', 'Asociación Gremial de Mujeres del Agro de Chile A.G.'],
+    ['RUT', '65.136.478-7'],
+    ['Banco', 'Scotiabank'],
+    ['Cuenta corriente', '991103724'],
+    ['Correo para comprobantes', 'contabilidad@amagroag.cl'],
+  ],
+};
 const CIUDAD = 'Santiago';
 
 const CARTA = [
@@ -2865,11 +2875,10 @@ function correo(registro, enlaces = {}) {
     '¡Bienvenida a AMAGRO AG! Con mucha alegría te comunicamos que nuestro Directorio ha aprobado tu incorporación.', '',
     'Aquí está tu carta de bienvenida, con más información para tu incorporación:', MARCA_CARTA, '',
     ...(lista.length ? ['Estatutos gremiales: ' + ESTATUTOS_INTRO, ...lista, ''] : []),
-    ...(SECCION_PAGO ? [SECCION_PAGO, ''] : []),
     CIERRE[0], '',
     ...FIRMA,
   ].join('\n');
-  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: registro.nombre ? ASUNTO + ' · ' + titulo(registro.nombre) : ASUNTO, cuerpo, pagoIncluido: !!SECCION_PAGO, marca: MARCA_CARTA };
+  return { correoInvalido, destinatario: correoInvalido ? '' : registro.correo, asunto: registro.nombre ? ASUNTO + ' · ' + titulo(registro.nombre) : ASUNTO, cuerpo, pagoIncluido: !!PAGO, marca: MARCA_CARTA };
 }
 
 function nombreArchivo(nombre) {
@@ -2891,7 +2900,13 @@ function generar(registro, { ahora = new Date(), logo = null, enlaces = {} } = {
   r.parrafo([t('Estatutos gremiales: ', true), t(ESTATUTOS_INTRO)], { despues: 6 });
   for (const l of listaEstatutos(enlaces)) r.parrafo([t(l)], { despues: 4, tam: 9, sangria: 10 });
   r.espacio(8);
-  if (SECCION_PAGO) for (const p of SECCION_PAGO.split(/\n\n+/)) r.parrafo([t(p)], { despues: 10 });
+  if (PAGO) {
+    r.reservar(170); // la cuota y los datos de la cuenta no se separan entre páginas
+    r.parrafo([t('Cuota social: ', true), t(PAGO.cuota)], { despues: 8 });
+    r.parrafo([t('Datos para transferencia:', true)], { despues: 4 });
+    for (const [rotulo, valor] of PAGO.datos) r.parrafo([t(rotulo + ': ', true), t(valor)], { despues: 2, sangria: 10 });
+    r.espacio(12);
+  }
   r.reservar(120); // el título y la lista del Directorio no se separan entre páginas
   r.parrafo([t('Nuestro Directorio', true)], { despues: 4 });
   DIRECTORIO.forEach(l => r.parrafo([t(l)], { despues: 2 }));
