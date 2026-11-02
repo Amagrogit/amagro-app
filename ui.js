@@ -81,9 +81,9 @@ const ETAPAS_PESTANA = {
 const CONTROLES_PESTANA = {
   postulantes: ['etapa', 'periodo', 'filtro', 'region'],
   socias: ['filtroCargo', 'filtroComision', 'filtroPago', 'region'],
-  otras: ['etapa', 'region'],
+  otras: ['etapa', 'filtroAnio', 'region'],
 };
-const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'region'];
+const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'filtroAnio', 'region'];
 const COLUMNAS_PESTANA = {
   postulantes: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>',
   socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th>Pago</th>',
@@ -98,10 +98,16 @@ function renderEncabezado() {
   [...fila.children].slice(1).forEach(x => x.remove()); // la primera columna (casilla de selección) no cambia
   fila.insertAdjacentHTML('beforeend', COLUMNAS_PESTANA[pestana]);
 }
+const anioDe = d => (d.postulacion ? d.postulacion.slice(0, 4) : 'sin');
 function llenarEtapas() {
   if (pestana === 'otras') {
     const miembros = datos.filter(d => !d.duplicadaDe && enPestana(d, 'otras'));
     const n = f => miembros.filter(f).length;
+    const previoAnio = $('filtroAnio').value;
+    const anios = [...new Set(miembros.map(anioDe))].filter(a => a !== 'sin').sort();
+    $('filtroAnio').innerHTML = '<option value="">Todos los años</option>' + anios.map(a => '<option value="' + a + '">' + a + ' (' + n(d => anioDe(d) === a) + ')</option>').join('')
+      + (n(d => anioDe(d) === 'sin') ? '<option value="sin">Sin fecha (' + n(d => anioDe(d) === 'sin') + ')</option>' : '');
+    if ([...$('filtroAnio').options].some(o => o.value === previoAnio)) $('filtroAnio').value = previoAnio;
     $('etapa').innerHTML = '<option value="">Todas (' + miembros.length + ')</option>'
       + ['Renuncia', 'No califica'].filter(e => n(d => d.etapa === e)).map(e => '<option value="' + e + '">' + e + ' (' + n(d => d.etapa === e) + ')</option>').join('')
       + (n(d => d.inactiva) ? '<option value="__inactivas">No activas · postulaciones antiguas (' + n(d => d.inactiva) + ')</option>' : '');
@@ -201,7 +207,7 @@ function chipsComisionLista(d, fcom) {
   return c ? chip(c, coord(c) ? '★ Coordinadora' : 'Integrante') : '';
 }
 function pintar() {
-  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value;
+  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value, fa = $('filtroAnio').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
@@ -210,6 +216,7 @@ function pintar() {
     (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo, pestana === 'socias' ? d.inscripcion : ''].join(' ').toLowerCase().includes(q)) &&
     (f === 'marcadas' || f === 'inactivas' || enPestana(d)) && // los filtros «no activas» y «duplicadas» miran todas las etapas
     (!fp || (pagoDe(d.clave) || {}).estado === fp) &&
+    (!fa || anioDe(d) === fa) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
@@ -1384,7 +1391,7 @@ document.addEventListener('keydown', e => {
   if (editando) abrirFicha(seleccion); else cerrarFicha();
 });
 
-['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
+['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroPago', 'filtroAnio', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
 
 // Orden por columna. Cada clic en el mismo encabezado recorre: primera dirección -> la opuesta -> sin orden.
 // La fecha parte con las más recientes arriba; el nombre, de la A a la Z.
