@@ -89,7 +89,8 @@ const COLUMNAS_PESTANA = {
   socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th>Pago</th>',
   otras: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th>Observaciones</th>',
 };
-const enPestana = (d, p = pestana) => ETAPAS_PESTANA[p].includes(d.etapa);
+// Las postulaciones marcadas como no activas (por ejemplo, las antiguas) pasan a «Otras», sea cual sea su etapa.
+const enPestana = (d, p = pestana) => (d.inactiva ? p === 'otras' : ETAPAS_PESTANA[p].includes(d.etapa));
 const pagoDe = clave => (pagos && pagos.filas.find(f => f.clave === clave)) || null;
 
 function renderEncabezado() {
@@ -98,6 +99,14 @@ function renderEncabezado() {
   fila.insertAdjacentHTML('beforeend', COLUMNAS_PESTANA[pestana]);
 }
 function llenarEtapas() {
+  if (pestana === 'otras') {
+    const miembros = datos.filter(d => !d.duplicadaDe && enPestana(d, 'otras'));
+    const n = f => miembros.filter(f).length;
+    $('etapa').innerHTML = '<option value="">Todas (' + miembros.length + ')</option>'
+      + ['Renuncia', 'No califica'].filter(e => n(d => d.etapa === e)).map(e => '<option value="' + e + '">' + e + ' (' + n(d => d.etapa === e) + ')</option>').join('')
+      + (n(d => d.inactiva) ? '<option value="__inactivas">No activas · postulaciones antiguas (' + n(d => d.inactiva) + ')</option>' : '');
+    return;
+  }
   const cuenta = {};
   datos.forEach(d => { if (!d.duplicadaDe && !d.inactiva) cuenta[d.etapa] = (cuenta[d.etapa] || 0) + 1; });
   $('etapa').innerHTML = '<option value="">' + (pestana === 'otras' ? 'Renuncia y No califica' : 'Todas las etapas') + '</option>' +
@@ -165,7 +174,7 @@ function filaOtra(d) {
 }
 // Tarjetas de resumen de cada pestaña y contadores de las pestañas (no cuentan duplicadas ni no activas).
 function resumenPestana(vis) {
-  const activas = datos.filter(d => !d.duplicadaDe && !d.inactiva);
+  const activas = datos.filter(d => !d.duplicadaDe); // las no activas cuentan solo en «Otras» (enPestana las manda ahí)
   const cuentaDe = p => activas.filter(d => enPestana(d, p)).length;
   $('nPostulantes').textContent = cuentaDe('postulantes'); $('nSocias').textContent = cuentaDe('socias'); $('nOtras').textContent = cuentaDe('otras');
   const mias = activas.filter(d => enPestana(d));
@@ -175,7 +184,7 @@ function resumenPestana(vis) {
     return t(mias.length, 'socias') + t(mias.filter(d => d.fundadora).length, 'fundadoras') + t(mias.filter(d => d.cargosDetalle.length).length, 'con cargo') + t(mias.filter(d => d.comisiones.length).length, 'en alguna comisión')
       + (pagos ? t(estados.filter(e => e === 'al-dia').length, 'al día', 'bien') + t(estados.filter(e => e === 'pendiente' || e === 'atrasada').length, 'pendientes o atrasadas', 'mal') : '');
   }
-  if (pestana === 'otras') return t(mias.length, 'en total') + t(mias.filter(d => d.etapa === 'Renuncia').length, 'renunciaron') + t(mias.filter(d => d.etapa === 'No califica').length, 'no califican');
+  if (pestana === 'otras') return t(mias.length, 'en total') + t(mias.filter(d => d.etapa === 'Renuncia').length, 'renunciaron') + t(mias.filter(d => d.etapa === 'No califica').length, 'no califican') + t(mias.filter(d => d.inactiva).length, 'no activas (postulaciones antiguas)');
   const con = mias.filter(d => d.alertas.length).length;
   return t(mias.length, 'postulantes en proceso') + t(vis.length, 'en esta lista') + t(mias.length - con, 'sin alertas', 'bien') + t(con, 'con alertas', 'mal');
 }
@@ -201,9 +210,9 @@ function pintar() {
     (!q || [d.nombre, d.rut, d.empresa, d.comuna, d.correo, pestana === 'socias' ? d.inscripcion : ''].join(' ').toLowerCase().includes(q)) &&
     (f === 'marcadas' || f === 'inactivas' || enPestana(d)) && // los filtros «no activas» y «duplicadas» miran todas las etapas
     (!fp || (pagoDe(d.clave) || {}).estado === fp) &&
-    (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && !d.inactiva)) &&
+    (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
-    (!reg || d.region === reg) && (!et || d.etapa === et) &&
+    (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
     (!fcom || (fcom === '*' ? d.comisiones.length > 0 : fcom === 'coord' ? d.comisiones.some(c => c.rol === 'coordinadora') : d.comisiones.some(c => c.id === fcom))) &&
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
     (!desde || (d.postulacion && Date.parse(d.postulacion) >= desde)));
@@ -363,7 +372,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
       </div>
       <div class="cab-botones">
         ${editando ? '' : '<button class="sec btn-peq" id="editarFicha">✎ Editar</button>'}
-        ${editando || d.inactiva ? '' : '<button class="sec btn-peq" id="alternarActiva" title="Dejar de gestionar esta postulación (se oculta, no se borra)">Marcar no activa</button>'}
+        ${editando || d.inactiva ? '' : '<button class="sec btn-peq" id="alternarActiva" title="Dejar de gestionar esta postulación (pasa a la pestaña Otras, no se borra)">Marcar no activa</button>'}
         <button class="cerrar" id="cerrarFicha" aria-label="Cerrar">×</button>
       </div>
     </div>
@@ -373,7 +382,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
       <button class="sec btn-peq" id="abrirBienvenida">✉ Carta de bienvenida</button></section>` : ''}
     ${d.etapa === 'No califica' && !editando ? `<section class="editada">Etapa «No califica». Si el motivo es que trabaja en el sector público, hay una carta lista para responderle.
       <button class="sec btn-peq" id="abrirNoAcep">✉ Carta: solo mujeres del ámbito privado</button></section>` : ''}
-    ${d.inactiva && !editando ? `<section class="editada">Esta postulación está <b>no activa</b>: se oculta del listado y no genera avisos. No se ha borrado nada.
+    ${d.inactiva && !editando ? `<section class="editada">Esta postulación está <b>no activa</b>: está en la pestaña «Otras» y no genera avisos. No se ha borrado nada.
       <button class="sec btn-peq" id="alternarActiva">Volver a activa</button></section>` : ''}
     ${d.duplicadaDe && !editando ? `<section class="editada">Marcada como <b>duplicada</b> de ${d.duplicadaDeInfo ? `la postulación de la fila <button class="enlace" data-ir="${d.duplicadaDeInfo.fila}">${d.duplicadaDeInfo.fila}</button> (${esc(d.duplicadaDeInfo.nombre)})` : 'otra postulación que ya no está en la planilla'}. No cuenta en el listado ni da alertas de duplicado.
       <button class="sec btn-peq" id="quitarDuplicada">Quitar la marca</button></section>` : ''}
@@ -1107,7 +1116,7 @@ function actualizarSeleccion(visibles) {
 }
 async function cambiarActivas(claves, activa) {
   if (!claves.length) return;
-  if (!activa && claves.length > 1 && !confirm('¿Marcar ' + claves.length + ' postulaciones como no activas? Se ocultan del listado y de los avisos; no se borra nada y se pueden volver a activar.')) return;
+  if (!activa && claves.length > 1 && !confirm('¿Marcar ' + claves.length + ' postulaciones como no activas? Pasan a la pestaña «Otras» y salen de los avisos; no se borra nada y se pueden volver a activar.')) return;
   const r = await post('/api/activa', { claves, activa });
   if (r.error) return mostrar(r.error, true);
   claves.forEach(c => seleccionadas.delete(c));

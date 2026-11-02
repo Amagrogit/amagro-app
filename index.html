@@ -338,7 +338,7 @@
       <ul>
         <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
         <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas y una ✕ para cerrarlo; vuelve a salir al entrar o al actualizar.</li>
-            <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Se ocultan del listado y de los avisos, <b>no se borra nada</b>, y se ven con el filtro «No activas» (ahí se pueden <b>volver a activar</b>).</li>
+            <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Pasan a la pestaña <b>Otras</b> y salen de los avisos, <b>no se borra nada</b>, y desde ahí se pueden <b>volver a activar</b> (filtro «No activas · postulaciones antiguas»).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
         <li><b>Postulación aprobada:</b> en su ficha aparece <b>✉ Carta de bienvenida</b>: un correo corto con el enlace a su carta de bienvenida (PDF con logo y su nombre) y los enlaces a los estatutos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
         <li><b>Cargos, condición y comisiones:</b> en la ficha se ve si es <b>socia fundadora</b>, sus cargos de hoy (presidenta, tesorera, delegada regional con su región…) y las comisiones donde es <b>integrante</b> o <b>coordinadora</b>; se agregan o se quitan ahí mismo. En el listado, los filtros «Cargos» y «Comisiones» muestran quién es quién. La administradora crea comisiones en ⚙ → Comisiones.</li>
@@ -495,7 +495,7 @@
   <div class="pestanas" id="pestanas" role="tablist" aria-label="Listados">
     <button class="pestana activa" data-pestana="postulantes" role="tab" title="Postulaciones en proceso: carta, documentos y aprobación">Postulantes <span class="n" id="nPostulantes">0</span></button>
     <button class="pestana" data-pestana="socias" role="tab" title="Socias: cargos, comisiones y pagos">Socias <span class="n" id="nSocias">0</span></button>
-    <button class="pestana" data-pestana="otras" role="tab" title="Quienes renunciaron o no califican">Otras <span class="n" id="nOtras">0</span></button>
+    <button class="pestana" data-pestana="otras" role="tab" title="Quienes renunciaron, no califican o están marcadas como no activas (postulaciones antiguas)">Otras <span class="n" id="nOtras">0</span></button>
   </div>
   <div class="resumen" id="resumen"></div>
   <div class="controles">
@@ -515,7 +515,6 @@
       <option value="duplicadas">Solo personas con más de una postulación</option>
       <option value="sinrespuesta">Carta enviada sin respuesta (seguimiento)</option>
       <option value="porrevisar">Documentos recibidos por revisar</option>
-      <option value="inactivas">No activas (ocultas de la gestión)</option>
       <option value="marcadas">Marcadas como duplicadas</option>
     </select>
     <select id="filtroCargo" title="Filtrar por cargo o por condición de socia fundadora"><option value="">Cargos: todos</option></select>
@@ -529,7 +528,7 @@
     <button class="btn-peq" id="marcarNoActivas">Marcar como no activas</button>
     <button class="sec btn-peq" id="marcarActivas">Volver a activas</button>
     <button class="sec btn-peq" id="limpiarSeleccion">Quitar la selección</button>
-    <span class="sub">No se borra nada: las no activas se ocultan y se pueden volver a activar.</span>
+    <span class="sub">No se borra nada: las no activas pasan a la pestaña «Otras» y se pueden volver a activar desde ahí.</span>
   </div>
   <div class="tabla"><table>
     <thead id="encabezadoTabla"><tr id="encabezadoFila">
@@ -712,6 +711,6 @@
 <script src="app.js?v=a2363a82"></script>
 <script src="mensaje.js?v=dc41d3e0"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=fd8bc96c"></script>
+<script src="ui.js?v=0161822c"></script>
 </body>
 </html>
