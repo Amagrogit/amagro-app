@@ -412,6 +412,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
       ? `<textarea data-campo="observaciones" data-ini="${esc(d.observaciones)}">${esc(d.observaciones)}</textarea>`
       : (d.observaciones ? `<div class="texto">${esc(d.observaciones)}</div>` : NADA)}</section>
     ${editando ? '' : bloqueCarta(d)}
+    ${editando ? '' : bloqueDirectorio(d)}
     ${editando ? '' : '<section><h3>Historial de cambios</h3><button class="sec" id="verHistFicha" type="button">Ver historial</button><div id="histFicha" class="sub" hidden></div></section>'}
     <section><h3>Alertas de calidad de datos</h3>${d.alertas.length ? d.alertas.map(a => `<span class="chip mal">${esc(a)}</span>`).join('') : '<span class="chip ok">Sin alertas</span>'}
       ${editando ? '' : bloqueMensaje(d)}</section>
@@ -419,7 +420,7 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
   $('ficha').classList.add('abierta');
   $('ficha').setAttribute('aria-hidden', 'false');
   $('ficha').scrollTop = conservarPosicion ? posicion : 0;
-  if (!editando) cargarDocumentos(d);
+  if (!editando) { cargarDocumentos(d); cargarDirectorio(d); }
   if (document.body.classList.contains('lectura')) $('ficha').querySelectorAll('.paso-fila input').forEach(el => { el.disabled = true; });
   pintar();
 }
@@ -1431,7 +1432,7 @@ async function post(url, cuerpo) {
 }
 
 // Solo un panel abierto a la vez; se cierran al terminar la tarea, al abrir el otro o con Esc.
-const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones', 'panelPago', 'panelGrupo'];
+const PANELES = ['panelConfig', 'panelRespaldo', 'panelHistorial', 'panelSocias', 'panelCorrecciones', 'panelUsuarias', 'panelAyuda', 'panelDuplicados', 'panelComisiones', 'panelPago', 'panelGrupo', 'panelDirectores'];
 const cerrarPaneles = () => PANELES.forEach(id => { $(id).hidden = true; });
 // Cada panel lleva su botón para cerrarlo (también se cierra con Esc o volviendo a elegir su opción del menú).
 PANELES.forEach(id => {
@@ -1674,6 +1675,121 @@ async function borrarCarnet(id) {
   if (p) mostrar('Carnet borrado e identidad verificada.');
 }
 
+// ---- Validación del Directorio ----
+// Cada director aprueba o rechaza desde un enlace personal (no tienen cuenta en la aplicación). Se necesita la aprobación de todos.
+// Los códigos de los enlaces solo se ven al crearlos: no quedan guardados.
+let enlacesDirectorio = null; // { clave, enlaces: [{ director, nombre, cargo, correo, url, vence_en }] }
+const ESTADO_DIRECTOR = { aprobo: ['ok', '✔ Aprobó'], rechazo: ['mal', '✖ Rechazó'], pendiente: ['pend', 'Pendiente'], vencido: ['mal', 'Enlace vencido'], 'sin-enlace': ['', 'Sin enlace'] };
+// La sección se muestra cuando ya hay documentos recibidos o revisados y la persona todavía no es socia.
+const muestraDirectorio = d => !d.inactiva && d.etapa !== 'Socia' && !!(d.pasos.identidad || d.pasos.revisada || d.pasos.aprobada || (d.docs && d.docs.recibidos));
+function bloqueDirectorio(d) {
+  return muestraDirectorio(d) ? '<section><h3>Validación del Directorio</h3><div id="dirFicha" class="sub">Cargando…</div></section>' : '';
+}
+async function cargarDirectorio(d) {
+  if (!muestraDirectorio(d) || !$('dirFicha')) return;
+  try {
+    const j = await (await fetch('/api/directorio?clave=' + encodeURIComponent(d.clave))).json();
+    const actual = fichaActual();
+    if (!$('dirFicha') || !actual || actual.clave !== d.clave) return; // se cambió de ficha mientras cargaba
+    if (j.error) { $('dirFicha').textContent = j.error; return; }
+    $('dirFicha').className = '';
+    $('dirFicha').innerHTML = pintarDirectorio(d, j);
+  } catch { if ($('dirFicha')) $('dirFicha').textContent = 'No se pudo cargar la validación del Directorio.'; }
+}
+function pintarDirectorio({ clave }, { resumen: r, paginaSubida }) {
+  const titulo = {
+    'sin-enlaces': 'Todavía no se les envían los enlaces a los directores.',
+    'en-curso': `${r.aprobaron} de ${r.total} directores aprobaron · faltan ${r.faltan}.`,
+    detenida: `⚠ Detenida: ${r.rechazaron === 1 ? 'un director rechazó' : r.rechazaron + ' directores rechazaron'} la postulación. La administradora debe decidir qué hacer.`,
+    aprobada: '✔ Aprobada por todo el Directorio.',
+  }[r.estado];
+  const filas = r.lista.map(x => {
+    const [clase, texto] = ESTADO_DIRECTOR[x.estado];
+    const detalle = x.fecha ? ' · ' + esc(fechaHoraCL(x.fecha)) : x.estado === 'pendiente' && x.vence ? ' · vence el ' + esc(fechaCL(String(x.vence).slice(0, 10))) : '';
+    return `<div class="hist-fila"><b>${esc(x.nombre)}</b>${x.cargo ? ' <span class="sub">(' + esc(x.cargo) + ')</span>' : ''} · <span class="chip ${clase}">${texto}</span>${detalle}${x.motivo ? '<br><i>«' + esc(x.motivo) + '»</i>' : ''}</div>`;
+  }).join('');
+  // Solo se muestran los enlaces de quienes todavía no votan (a los demás ya no les sirven).
+  const porVotar = enlacesDirectorio && enlacesDirectorio.clave === clave ? enlacesDirectorio.enlaces.map((e, i) => ({ e, i })).filter(({ e }) => r.lista.some(x => x.director === e.director && x.estado === 'pendiente')) : [];
+  const nuevos = porVotar.length ? `<div class="aviso" style="margin:8px 0 0">
+      <b>Enlaces listos</b> (cada uno es personal, sirve para votar una sola vez y vence el ${esc(fechaCL(String(porVotar[0].e.vence_en).slice(0, 10)))}). Cópialos ahora: no se pueden volver a ver.
+      ${porVotar.map(({ e, i }) => `<div style="margin:8px 0 0"><b>${esc(e.nombre)}</b> <span class="sub">${esc(e.correo)}</span>
+        <input type="text" readonly value="${esc(e.url)}" style="width:100%;margin:4px 0">
+        <button class="btn-peq" data-dir-copiar="${i}">Copiar enlace</button></div>`).join('')}</div>` : '';
+  const crear = r.estado === 'aprobada' ? '' : !paginaSubida
+    ? '<p class="sub">Falta configurar la dirección de la página de subida para poder crear enlaces.</p>'
+    : `<button class="sec btn-peq dir-edicion" data-dir-crear style="margin-top:8px">${r.estado === 'sin-enlaces' ? 'Crear enlaces para los directores' : 'Crear enlaces nuevos (para quienes faltan)'}</button>`;
+  return `<p style="margin:0 0 6px"><b>${esc(titulo)}</b></p>${filas}${crear}${nuevos}`;
+}
+async function crearEnlacesDirectorio() {
+  const d = fichaActual();
+  if (!d) return;
+  const r = await post('/api/directorio/enlaces', { clave: d.clave });
+  if (r.error) return mostrar(r.error, true);
+  enlacesDirectorio = { clave: d.clave, enlaces: r.enlaces };
+  cargarDirectorio(d);
+  mostrar('Enlaces creados: uno por cada director que aún no votó.');
+}
+$('ficha').addEventListener('click', async e => {
+  if (e.target.closest('[data-dir-crear]')) return crearEnlacesDirectorio();
+  const c = e.target.closest('[data-dir-copiar]');
+  if (c && enlacesDirectorio) {
+    const ok = await copiarTexto(enlacesDirectorio.enlaces[Number(c.dataset.dirCopiar)].url);
+    mostrar(ok ? 'Enlace copiado.' : 'No se pudo copiar automáticamente: selecciona el enlace y presiona Ctrl+C.', !ok);
+  }
+});
+
+// Panel de la administradora (⚙ → Directorio): a quiénes se envía el enlace de validación. Un director con votos no se borra: se desactiva.
+let directoresLista = [], directorEditando = null;
+function pintarPanelDirectores() {
+  $('dirLista').innerHTML = directoresLista.length
+    ? '<table class="tabla-usuarias"><thead><tr><th>Nombre</th><th>Cargo</th><th>Correo</th><th>Estado</th><th></th></tr></thead><tbody>'
+      + directoresLista.map(x => `<tr data-director="${esc(x.id)}"><td>${esc(x.nombre)}</td><td>${esc(x.cargo)}</td><td>${esc(x.correo)}</td><td>${x.activo ? '<span class="chip ok">Activo</span>' : '<span class="chip">Desactivado</span>'}</td><td><button class="sec btn-peq" data-dir-editar>Editar</button> <button class="sec btn-peq" data-dir-activar>${x.activo ? 'Desactivar' : 'Activar'}</button> <button class="sec btn-peq" data-dir-borrar>Borrar</button></td></tr>`).join('')
+      + '</tbody></table>'
+    : 'Todavía no hay directores.';
+  const activos = directoresLista.filter(x => x.activo).length;
+  $('dirResumen').textContent = activos ? 'Se necesita la aprobación de los ' + activos + ' directores activos.' : 'No hay directores activos: nadie podrá aprobar.';
+}
+async function cargarPanelDirectores() {
+  $('dirLista').textContent = 'Cargando…';
+  const r = await (await fetch('/api/directores')).json().catch(() => ({ error: 'No se pudo cargar la lista.' }));
+  if (r.error) { $('dirLista').textContent = r.error; return; }
+  directoresLista = r.directores; pintarPanelDirectores();
+}
+async function guardarDirectores(cuerpo, mensaje) {
+  const r = await post('/api/directores/guardar', cuerpo);
+  if (r.error) return mostrar(r.error, true);
+  directoresLista = r.directores; pintarPanelDirectores(); mostrar(mensaje);
+  return true;
+}
+$('verDirectores').addEventListener('click', () => { cerrarMenu(); if (alternarPanel('panelDirectores')) cargarPanelDirectores(); });
+$('formDirector').addEventListener('submit', async e => {
+  e.preventDefault();
+  const base = { nombre: $('drNombre').value, cargo: $('drCargo').value, correo: $('drCorreo').value };
+  const ok = directorEditando
+    ? await guardarDirectores({ id: directorEditando.id, ...base, activo: directorEditando.activo }, 'Director actualizado.')
+    : await guardarDirectores(base, 'Director agregado.');
+  if (ok) { directorEditando = null; $('formDirector').reset(); $('drGuardar').textContent = 'Agregar'; $('drCancelar').hidden = true; }
+});
+$('drCancelar').addEventListener('click', () => { directorEditando = null; $('formDirector').reset(); $('drGuardar').textContent = 'Agregar'; $('drCancelar').hidden = true; });
+$('dirLista').addEventListener('click', async e => {
+  const fila = e.target.closest('[data-director]');
+  const x = fila && directoresLista.find(y => y.id === fila.dataset.director);
+  if (!x) return;
+  if (e.target.closest('[data-dir-editar]')) {
+    directorEditando = x;
+    $('drNombre').value = x.nombre; $('drCargo').value = x.cargo; $('drCorreo').value = x.correo;
+    $('drGuardar').textContent = 'Guardar cambios'; $('drCancelar').hidden = false; $('drNombre').focus();
+  } else if (e.target.closest('[data-dir-activar]')) {
+    if (x.activo && !confirm('Si desactivas a ' + x.nombre + ', dejará de recibir enlaces y ya no se necesitará su aprobación en las postulaciones nuevas.\n\n¿Desactivarlo?')) return;
+    guardarDirectores({ id: x.id, nombre: x.nombre, cargo: x.cargo, correo: x.correo, activo: !x.activo }, x.activo ? 'Director desactivado.' : 'Director activado.');
+  } else if (e.target.closest('[data-dir-borrar]')) {
+    if (!confirm('¿Borrar a ' + x.nombre + ' de la lista? Si ya tiene votos registrados no se podrá borrar: en ese caso, desactívalo.')) return;
+    const r = await post('/api/directores/borrar', { id: x.id });
+    if (r.error) return mostrar(r.error, true);
+    directoresLista = r.directores; pintarPanelDirectores(); mostrar('Director borrado.');
+  }
+});
+
 // ---- Importar planilla de socias ----
 let sociasCsv = ''; // texto del archivo elegido (si se usa archivo en vez de enlace)
 const entradaSocias = () => ({ csv: sociasCsv, url: $('sociasUrl').value.trim() });
@@ -1850,6 +1966,7 @@ async function entrarALaApp(usuario) {
   $('verComisiones').hidden = !esAdmin;
   $('verPago').hidden = !esAdmin;
   $('verGrupo').hidden = !esAdmin;
+  $('verDirectores').hidden = !esAdmin;
   $('usuario').textContent = usuario ? usuario.nombre + ' · ' + (ROL[usuario.rol] || usuario.rol) : '';
   const r = await fetch('/api/postulaciones');
   if (r.ok) { cargar(await r.json()); revisarMigracion(); if (puedeEditarRol(usuario.rol)) iniciarConsultaPendientes(); }
@@ -2318,6 +2435,11 @@ function lineaHistorial(h, conNombre) {
     const cubre = d.desde ? ' (desde ' + nombreMes(d.desde) + ')' : '';
     const texto = d.anulado ? 'anuló el pago de ' + dinero(d.monto) + cubre + (d.motivo ? ': ' + d.motivo : '') : 'registró un pago de ' + dinero(d.monto) + ', cubre ' + (d.meses > 1 ? d.meses + ' meses' : '1 mes') + cubre + (d.medio ? ' · ' + (MEDIOS_ROTULO[d.medio] || d.medio).toLowerCase() : '');
     return '<div class="hist-fila"><span class="quien">' + esc(h.usuario_nombre || 'Alguien') + '</span> · ' + esc(new Date(h.creado_en).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })) + '<br>' + esc(texto) + '</div>';
+  }
+  if (h.accion === 'directorio') {
+    const d = h.detalle || {};
+    const texto = d.evento === 'voto' ? (d.voto === 'aprueba' ? 'aprobó la postulación' : 'rechazó la postulación' + (d.motivo ? ': ' + d.motivo : '')) : 'creó los enlaces del Directorio para ' + (d.directores || []).join(', ');
+    return '<div class="hist-fila"><span class="quien">' + esc(h.usuario_nombre || 'Alguien') + '</span> · ' + esc(cuando) + (conNombre ? ' · ' + esc((datos.find(x => x.clave === h.clave) || {}).nombre || 'otra postulación') : '') + '<br>' + esc(texto) + '</div>';
   }
   const cambios = Object.entries(h.detalle || {}).map(([k, v]) => {
     if (k === 'comisiones') return 'cambió las comisiones: ' + (comisionesTexto(v.antes) || 'ninguna') + ' → ' + (comisionesTexto(v.despues) || 'ninguna');

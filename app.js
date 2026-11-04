@@ -1315,6 +1315,34 @@ class Almacen {
     await this.sesion.pedir('POST', 'configuracion?on_conflict=clave', { cuerpo: { clave: 'datos_pago', valor, actualizado: new Date().toISOString() }, prefer: 'resolution=merge-duplicates' });
   }
 
+  // ---- Validación del Directorio: la lista de directores (la cambia solo la administradora) y los votos de cada postulante ----
+  async directores() {
+    const { datos } = await this.sesion.pedir('GET', 'directores?select=id,nombre,cargo,correo,activo,orden&order=orden.asc,nombre.asc');
+    return Array.isArray(datos) ? datos : [];
+  }
+  async crearDirector(d) {
+    const { datos } = await this.sesion.pedir('POST', 'directores', { cuerpo: d, prefer: 'return=representation' });
+    return Array.isArray(datos) ? datos[0] : datos;
+  }
+  async cambiarDirector(id, cambios) {
+    const { datos } = await this.sesion.pedir('PATCH', `directores?id=eq.${filtro(id)}`, { cuerpo: cambios, prefer: 'return=representation' });
+    if (!Array.isArray(datos) || datos.length !== 1) throw new ErrorSupabase('No se pudo cambiar: no tienes permiso o el director no existe.', { estado: 403 });
+  }
+  async borrarDirector(id) {
+    const { datos } = await this.sesion.pedir('DELETE', `directores?id=eq.${filtro(id)}`, { prefer: 'return=representation' });
+    if (!Array.isArray(datos) || datos.length !== 1) throw new ErrorSupabase('No se pudo borrar: no tienes permiso o el director no existe.', { estado: 403 });
+  }
+  // Votos vigentes de una postulante (sin el código ni la copia de sus datos: la base no los entrega).
+  async votosDirectorio(clave) {
+    const { datos } = await this.sesion.pedir('GET', `votos_directorio?select=id,director,director_nombre,creado_en,vence_en,voto,motivo,votado_en&clave=eq.${filtro(clave)}&revocado=eq.false&order=creado_en.desc`);
+    return Array.isArray(datos) ? datos : [];
+  }
+  // Crea un enlace para cada director que aún no votó. Los códigos solo se ven ahora: la base guarda su huella.
+  async crearVotosDirectorio(clave, datos, dias = 30) {
+    const { datos: lista } = await this.sesion.pedir('POST', 'rpc/crear_votos_directorio', { cuerpo: { p_clave: clave, p_datos: datos, p_dias: dias } });
+    return Array.isArray(lista) ? lista : [];
+  }
+
   // ---- Comisiones (la lista; quién integra cada una se guarda en la ficha de cada socia) ----
   // Si la tabla todavía no existe (falta ejecutar el esquema), la aplicación sigue funcionando, solo sin comisiones.
   async comisiones() {
@@ -1670,6 +1698,7 @@ const CM = require('./comisiones');
 const PAGO = require('./pago');
 const PG = require('./pagos');
 const GRUPO = require('./grupo');
+const DIR = require('./directorio');
 
 // La API de la aplicación: atiende las peticiones /api/... de la pantalla. El MISMO código corre en dos lugares:
 //  - en el computador (server.js), y
@@ -1692,7 +1721,7 @@ const GRUPO = require('./grupo');
 const NO_ENCONTRADA = 'No se encontró a esa postulante. Actualiza la planilla e inténtalo de nuevo.';
 const ROLES_VALIDOS = ['admin', 'secretaria', 'directiva'];
 // Lo único que puede hacer la categoría Directiva (consultar).
-const SOLO_CONSULTA = new Set(['GET /api/pagos', 'GET /api/pagos/historial', 'GET /api/postulaciones', 'GET /api/historial', 'GET /api/documentos', 'GET /api/documento/ver', 'POST /api/carta', 'GET /api/correo/info', 'POST /api/mi-clave']);
+const SOLO_CONSULTA = new Set(['GET /api/pagos', 'GET /api/pagos/historial', 'GET /api/postulaciones', 'GET /api/historial', 'GET /api/documentos', 'GET /api/documento/ver', 'POST /api/carta', 'GET /api/correo/info', 'GET /api/directorio', 'POST /api/mi-clave']);
 
 // Cada entrada de las ediciones: { campos: {correcciones}, pasos?: {pasos de admisión}, modificado }.
 const soloCampos = ed => Object.fromEntries(Object.entries(ed).map(([k, v]) => [k, v.campos || {}]));
@@ -2254,6 +2283,66 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (m.length < 3 || m.length > 300) return fallo(400, 'Escribe el motivo de la anulación (entre 3 y 300 letras).');
       await almacen.anularPago(id, m);
       return ok(await armarPagos());
+    }
+
+    // ---------- Validación del Directorio ----------
+    // La lista de directores la cambia solo la administradora. Un director con votos no se borra: se desactiva.
+    if (ruta === 'GET /api/directores') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede ver la lista de directores.');
+      return ok({ directores: await almacen.directores() });
+    }
+    if (ruta === 'POST /api/directores/guardar') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar la lista de directores.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { id } = a.cuerpo || {};
+      const v = DIR.validarDirector(a.cuerpo);
+      if (v.error) return fallo(400, v.error);
+      try {
+        if (id !== undefined) {
+          if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Director inválido.');
+          await almacen.cambiarDirector(id, v.limpio);
+        } else {
+          const orden = (await almacen.directores()).reduce((m, d) => Math.max(m, d.orden || 0), 0) + 1;
+          await almacen.crearDirector({ ...v.limpio, orden });
+        }
+      } catch (e) {
+        if (e && e.codigo === '23505') return fallo(409, 'Ya hay un director con ese correo.');
+        throw e;
+      }
+      return ok({ directores: await almacen.directores() });
+    }
+    if (ruta === 'POST /api/directores/borrar') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede cambiar la lista de directores.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { id } = a.cuerpo || {};
+      if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Director inválido.');
+      try { await almacen.borrarDirector(id); }
+      catch (e) {
+        if (e && e.codigo === '23503') return fallo(409, 'Ese director ya tiene votos registrados, así que no se puede borrar. Desactívalo para que deje de recibir enlaces.');
+        throw e;
+      }
+      return ok({ directores: await almacen.directores() });
+    }
+    // Cómo va la votación de una postulante: qué directores aprobaron, rechazaron o faltan.
+    if (ruta === 'GET /api/directorio') {
+      const clave = consulta.get('clave');
+      if (!clave) return fallo(400, 'Falta la postulante.');
+      const [directores, votos] = await Promise.all([almacen.directores(), almacen.votosDirectorio(clave)]);
+      return ok({ resumen: DIR.resumenVotos(directores, votos), paginaSubida: !!paginaSubida() });
+    }
+    // Crea el enlace personal de cada director que aún no votó. Los códigos se muestran una sola vez: no quedan guardados.
+    if (ruta === 'POST /api/directorio/enlaces') {
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const registro = await buscarRegistro((a.cuerpo || {}).clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (!paginaSubida()) return fallo(400, 'Falta configurar la dirección de la página de subida (paginaSubida).');
+      const lista = await almacen.crearVotosDirectorio(registro.clave, DIR.datosParaDirector(registro), DIR.DIAS_ENLACE);
+      if (!lista.length) return fallo(409, 'Todos los directores ya votaron: no hay enlaces nuevos que crear.');
+      const [directores, votos] = await Promise.all([almacen.directores(), almacen.votosDirectorio(registro.clave)]);
+      return ok({
+        enlaces: lista.map(e => ({ director: e.director, nombre: e.nombre, cargo: e.cargo, correo: e.correo, url: urlPagina(`/directorio.html#${e.token}`), vence_en: e.vence_en })),
+        resumen: DIR.resumenVotos(directores, votos),
+      });
     }
 
     // ---------- Grupo de WhatsApp de las socias ----------
@@ -3114,6 +3203,65 @@ function leer(valor) {
 }
 
 module.exports = { CLAVE, validar, leer };
+
+});
+
+definir("lib/directorio", function (module, exports, require, __dirname, Buffer) {
+// Validación del Directorio. Antes de ser socia, cada postulante debe ser aprobada por TODOS los directores activos (unanimidad).
+// Cada director recibe un enlace personal; si uno rechaza, la postulación queda detenida y se avisa a la administradora.
+// Aquí vive lo que no depende de la base: validar la lista de directores, armar lo que ve el director y resumir los votos.
+
+const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DIAS_ENLACE = 30; // vigencia del enlace de cada director
+
+const limpiar = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+
+// Valida lo que llega de la pantalla de ⚙ → Directorio. Devuelve { limpio } o { error }.
+function validarDirector(entrada) {
+  if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)) return { error: 'Los datos del director no son válidos.' };
+  const nombre = limpiar(entrada.nombre, 120), cargo = limpiar(entrada.cargo, 60), correo = limpiar(entrada.correo, 254).toLowerCase();
+  if (nombre.length < 2) return { error: 'Escribe el nombre del director.' };
+  if (!CORREO.test(correo)) return { error: 'El correo no parece válido. Revisa que tenga @ y un dominio.' };
+  const limpio = { nombre, cargo, correo };
+  if (entrada.activo !== undefined) limpio.activo = entrada.activo === true;
+  return { limpio };
+}
+
+// Lo que el director verá en su enlace: una copia de estos datos al momento de crearlo. Nunca el carnet ni el RUT.
+function datosParaDirector(registro) {
+  return {
+    nombre: limpiar(registro.nombre, 200),
+    region: limpiar(registro.region, 200),
+    empresa: limpiar(registro.empresa, 400),
+    motivacion: limpiar(registro.motivacion, 3000),
+  };
+}
+
+// Resume la votación de una postulante.
+//   directores: [{ id, nombre, cargo, correo, activo }]   votos: [{ director, director_nombre, voto, motivo, votado_en, vence_en, revocado, creado_en }]
+// estado: 'sin-enlaces' (aún no se envía a nadie) | 'en-curso' | 'detenida' (alguien rechazó) | 'aprobada' (todos aprobaron)
+function resumenVotos(directores, votos, ahora = new Date()) {
+  const activos = (directores || []).filter(d => d.activo);
+  const vigentes = (votos || []).filter(v => !v.revocado);
+  const lista = activos.map(d => {
+    // El voto de cada director es el que ya emitió; si no, su enlace más reciente.
+    const suyos = vigentes.filter(v => v.director === d.id).sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en)));
+    const emitido = suyos.find(v => v.voto), enlace = emitido || suyos[0] || null;
+    const estado = emitido ? (emitido.voto === 'aprueba' ? 'aprobo' : 'rechazo')
+      : !enlace ? 'sin-enlace'
+      : new Date(enlace.vence_en) <= ahora ? 'vencido' : 'pendiente';
+    return { director: d.id, nombre: d.nombre, cargo: d.cargo, estado, fecha: emitido ? emitido.votado_en : null, motivo: emitido ? emitido.motivo || '' : '', vence: enlace ? enlace.vence_en : null };
+  });
+  const cuenta = e => lista.filter(x => x.estado === e).length;
+  const aprobaron = cuenta('aprobo'), rechazaron = cuenta('rechazo');
+  const estado = !lista.length || lista.every(x => x.estado === 'sin-enlace') ? 'sin-enlaces'
+    : rechazaron ? 'detenida'
+    : aprobaron === lista.length ? 'aprobada'
+    : 'en-curso';
+  return { estado, total: lista.length, aprobaron, rechazaron, faltan: lista.length - aprobaron - rechazaron, lista };
+}
+
+module.exports = { DIAS_ENLACE, validarDirector, datosParaDirector, resumenVotos };
 
 });
 

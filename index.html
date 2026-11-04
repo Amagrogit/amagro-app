@@ -139,7 +139,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura #verDirectores, body.lectura .dir-edicion, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -248,6 +248,7 @@
         <button class="item" role="menuitem" id="verDuplicados">Duplicados<small>Dejar la postulación más reciente y marcar las otras</small></button>
         <button class="item" role="menuitem" id="verHistorial">Historial de cambios<small>Quién cambió qué y cuándo</small></button>
         <button class="item" role="menuitem" id="respaldo">Respaldo<small>Descargar las correcciones y los pagos, o restaurar</small></button>
+        <button class="item" role="menuitem" id="verDirectores" hidden>Directorio<small>A quiénes se envía el enlace para validar a las postulantes</small></button>
         <button class="item" role="menuitem" id="verGrupo" hidden>Grupo de WhatsApp<small>El enlace de invitación que lleva la carta de bienvenida</small></button>
         <button class="item" role="menuitem" id="verPago" hidden>Datos de pago<small>La cuota y la cuenta que lleva la carta de bienvenida</small></button>
         <button class="item" role="menuitem" id="verComisiones" hidden>Comisiones<small>Crear, renombrar o borrar comisiones de trabajo</small></button>
@@ -285,6 +286,17 @@
   <div id="avisoMigracion" class="aviso" role="alert" hidden>
     <b>Hay correcciones guardadas solo en este computador.</b> <span id="migracionTexto"></span>
     <div style="margin-top:6px"><button class="btn-peq" id="subirAntiguas">Subirlas a la base compartida</button></div>
+  </div>
+  <div id="panelDirectores" class="aviso" hidden>
+    <b>Directorio</b>
+    <div class="sub" style="margin:2px 0 6px">Antes de ser socia, cada postulante debe ser aprobada por <b>todos</b> los directores activos. Cada director recibe un enlace personal para ver los datos de la postulante y aprobar o rechazar; no necesitan cuenta en la aplicación. <span id="dirResumen"></span> Si alguien deja el Directorio, <b>desactívalo</b> (así no se pierde lo que votó).</div>
+    <div id="dirLista"></div>
+    <form id="formDirector" autocomplete="off" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:8px">
+      <label style="flex:1 1 200px">Nombre<br><input id="drNombre" required minlength="2" maxlength="120" style="width:100%"></label>
+      <label style="flex:1 1 130px">Cargo<br><input id="drCargo" maxlength="60" placeholder="Tesorera" style="width:100%"></label>
+      <label style="flex:1 1 220px">Correo<br><input id="drCorreo" type="email" required maxlength="254" style="width:100%"></label>
+      <button type="submit" id="drGuardar">Agregar</button> <button type="button" class="sec" id="drCancelar" hidden>Cancelar</button>
+    </form>
   </div>
   <div id="panelGrupo" class="aviso" hidden>
     <b>Grupo de WhatsApp de las socias</b>
@@ -722,9 +734,9 @@
 </div>
 
 <script src="config.js?v=c8ec37a6"></script>
-<script src="app.js?v=bd1af1d6"></script>
+<script src="app.js?v=b7bfa9a2"></script>
 <script src="mensaje.js?v=dc41d3e0"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=f27cc6a5"></script>
+<script src="ui.js?v=17da8ee1"></script>
 </body>
 </html>
