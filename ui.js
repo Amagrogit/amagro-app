@@ -23,6 +23,7 @@ function cargar(resp, conservar) {
   if (resp.error) { $('fuente').textContent = 'Error: ' + resp.error; return; }
   const previo = { region: $('region').value, etapa: $('etapa').value, sel: seleccion };
   datos = resp.registros;
+  actualizarAvisoBienvenidas();
   regiones = resp.regiones || regiones;
   comisionesCatalogo = resp.comisionesCatalogo || [];
   pasosDef = resp.pasosDef || pasosDef;
@@ -2018,13 +2019,29 @@ $('sociasResultado').addEventListener('click', async e => {
 // ---- Avisos de novedades (documentos y correcciones por revisar) ----
 // Cada aviso azul se puede cerrar con la ✕ y no vuelve a salir hasta que se entre de nuevo o se actualice la pantalla principal
 // (↻ Actualizar o recargar la página). Las consultas automáticas de cada minuto no lo vuelven a abrir.
-const avisoCerrado = { docs: false, correcciones: false };
+const avisoCerrado = { docs: false, correcciones: false, bienvenidas: false };
 let ultimoDocs = 0, ultimoCorrecciones = 0;
 function reabrirAvisos() {
-  avisoCerrado.docs = avisoCerrado.correcciones = false;
+  avisoCerrado.docs = avisoCerrado.correcciones = avisoCerrado.bienvenidas = false;
+  actualizarAvisoBienvenidas();
   actualizarAvisoDocs(ultimoDocs);
   actualizarAvisoCorrecciones(ultimoCorrecciones);
 }
+// ---- Aviso de socias aprobadas por el Directorio a las que falta enviar la carta de bienvenida ----
+// Se calcula con la lista que ya está cargada, así se actualiza solo al enviar cada bienvenida.
+function actualizarAvisoBienvenidas() {
+  const n = datos.filter(bienvenidaPendiente).length;
+  $('avisoBienvenidas').hidden = !n || avisoCerrado.bienvenidas;
+  $('avisoBienvenidasTexto').textContent = n === 1 ? '1 socia aprobada por el Directorio espera su carta de bienvenida.' : n + ' socias aprobadas por el Directorio esperan su carta de bienvenida.';
+}
+$('cerrarAvisoBienvenidas').addEventListener('click', () => { avisoCerrado.bienvenidas = true; $('avisoBienvenidas').hidden = true; });
+$('verBienvenidas').addEventListener('click', () => {
+  if (!puedeSalir()) return;
+  cerrarFicha();
+  cambiarPestana('socias');
+  $('filtroBienv').value = 'pendiente';
+  pintar();
+});
 $('cerrarAvisoDocs').addEventListener('click', () => { avisoCerrado.docs = true; $('avisoDocs').hidden = true; });
 $('cerrarAvisoCorrecciones').addEventListener('click', () => { avisoCerrado.correcciones = true; $('avisoCorrecciones').hidden = true; });
 // ---- Aviso de documentos por revisar ----
