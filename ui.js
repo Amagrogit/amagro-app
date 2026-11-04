@@ -2,7 +2,7 @@ let datos = [];
 // Los campos de solo lectura (por ejemplo, el enlace recién creado) se seleccionan al hacer clic, para copiarlos fácil.
 document.addEventListener('focusin', e => { if (e.target.matches && e.target.matches('input[readonly]')) e.target.select(); });
 let seleccion = null;
-const ETAPAS = ['Pendiente de carta', 'Con documentos', 'Aprobada', 'Socia', 'Renuncia', 'No califica', 'Sin gestión'];
+const ETAPAS = ['Pendiente de carta', 'Con documentos', 'Socia', 'Renuncia', 'No califica', 'Sin gestión'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const claseEtapa = e => 'e-' + e.replace(/\s+/g, '-');
@@ -74,16 +74,16 @@ const visiblesActuales = () => ultimosVisibles;
 // Cada pestaña muestra una parte de la misma lista, con sus propias tarjetas, filtros y columnas. La aplicación siempre abre en «Postulantes».
 let pestana = 'postulantes';
 const ETAPAS_PESTANA = {
-  postulantes: ['Pendiente de carta', 'Con documentos', 'Aprobada', 'Sin gestión'], // incluye a las aprobadas: son socias recién cuando pagan
+  postulantes: ['Pendiente de carta', 'Con documentos', 'Sin gestión'], // al aprobarla todo el Directorio pasa a «Socia», aunque aún no pague la primera cuota
   socias: ['Socia'],
   otras: ['Renuncia', 'No califica'],
 };
 const CONTROLES_PESTANA = {
   postulantes: ['etapa', 'periodo', 'filtro', 'region'],
-  socias: ['filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'region'],
+  socias: ['filtroCargo', 'filtroComision', 'filtroBienv', 'filtroGrupo', 'filtroPago', 'region'],
   otras: ['etapa', 'filtroAnio', 'region'],
 };
-const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region'];
+const TODOS_LOS_CONTROLES = ['etapa', 'periodo', 'filtro', 'filtroCargo', 'filtroComision', 'filtroBienv', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region'];
 const COLUMNAS_PESTANA = {
   postulantes: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th><button class="orden" data-orden="postulacion" title="Ordenar por fecha de postulación">Postulación <span></span></button></th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Etapa</th><th title="Pasos de admisión hechos">Pasos</th><th>Pago</th><th>Alertas</th>',
   socias: '<th><button class="orden" data-orden="nombre" title="Ordenar por nombre">Nombre <span></span></button></th><th>N° inscripción</th><th>RUT</th><th>Empresa u organización</th><th>Región · Comuna</th><th>Cargos y comisiones</th><th title="Grupo de WhatsApp de las socias">Grupo WhatsApp</th><th>Pago</th>',
@@ -148,8 +148,10 @@ $('pestanas').addEventListener('click', e => {
 // Las dos primeras celdas de cada fila (casilla y nombre) son las mismas en todas las pestañas.
 function celdasInicio(d) {
   return `<td class="col-sel"><input type="checkbox" data-sel="${esc(d.clave)}" aria-label="Seleccionar a ${esc(d.nombre)}"${seleccionadas.has(d.clave) ? ' checked' : ''}></td>
-      <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.inactiva ? ' <span class="chip" title="La administración dejó de gestionar esta postulación">No activa</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>`;
+      <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.inactiva ? ' <span class="chip" title="La administración dejó de gestionar esta postulación">No activa</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${bienvenidaPendiente(d) ? '<br><span class="chip nuevo" title="La aprobó todo el Directorio y ya es socia. Falta enviarle la carta de bienvenida">Aprobada por el Directorio</span>' + (d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : '') : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>`;
 }
+// Aprobada por el Directorio (ya es socia) y todavía sin la carta de bienvenida.
+const bienvenidaPendiente = d => !!(d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe);
 function filaSocia(d) {
   const p = pagoDe(d.clave);
   const cargos = d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('');
@@ -188,7 +190,7 @@ function resumenPestana(vis) {
   const t = (n, texto, clase = '') => `<div class="tarjeta ${clase}"><div class="n">${n}</div>${texto}</div>`;
   if (pestana === 'socias') {
     const estados = pagos ? mias.map(d => (pagoDe(d.clave) || {}).estado) : [];
-    return t(mias.length, 'socias') + t(mias.filter(d => d.fundadora).length, 'fundadoras') + t(mias.filter(d => d.cargosDetalle.length).length, 'con cargo') + t(mias.filter(d => d.comisiones.length).length, 'en alguna comisión') + t(mias.filter(d => estadoGrupo(d) === 'en').length, 'en el grupo de WhatsApp', 'bien') + t(mias.filter(d => estadoGrupo(d) === 'sin').length, 'sin invitar al grupo')
+    return t(mias.length, 'socias') + t(mias.filter(d => d.fundadora).length, 'fundadoras') + t(mias.filter(d => d.cargosDetalle.length).length, 'con cargo') + t(mias.filter(d => d.comisiones.length).length, 'en alguna comisión') + t(mias.filter(d => estadoGrupo(d) === 'en').length, 'en el grupo de WhatsApp', 'bien') + t(mias.filter(d => estadoGrupo(d) === 'sin').length, 'sin invitar al grupo') + (mias.some(bienvenidaPendiente) ? t(mias.filter(bienvenidaPendiente).length, 'bienvenidas por enviar', 'mal') : '')
       + (pagos ? t(estados.filter(e => e === 'al-dia').length, 'al día', 'bien') + t(estados.filter(e => e === 'pendiente' || e === 'atrasada').length, 'pendientes o atrasadas', 'mal') : '');
   }
   if (pestana === 'otras') return t(mias.length, 'en total') + t(mias.filter(d => d.etapa === 'Renuncia').length, 'renunciaron') + t(mias.filter(d => d.etapa === 'No califica').length, 'no califican') + t(mias.filter(d => d.inactiva).length, 'no activas (postulaciones antiguas)');
@@ -208,7 +210,7 @@ function chipsComisionLista(d, fcom) {
   return c ? chip(c, coord(c) ? '★ Coordinadora' : 'Integrante') : '';
 }
 function pintar() {
-  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value, fa = $('filtroAnio').value, fg = $('filtroGrupo').value;
+  const fc = $('filtroCargo').value, fcom = $('filtroComision').value, fp = $('filtroPago').value, fa = $('filtroAnio').value, fg = $('filtroGrupo').value, fb = $('filtroBienv').value;
   const q = $('buscar').value.toLowerCase(), f = $('filtro').value, reg = $('region').value, et = $('etapa').value;
   const dias = Number($('periodo').value);
   const desde = dias ? Date.now() - dias * 864e5 : null;
@@ -219,6 +221,7 @@ function pintar() {
     (!fp || (pagoDe(d.clave) || {}).estado === fp) &&
     (!fa || anioDe(d) === fa) &&
     (!fg || estadoGrupo(d) === fg) &&
+    (!fb || bienvenidaPendiente(d)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
     (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
@@ -253,7 +256,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
@@ -342,10 +345,11 @@ function bloquePasos(d) {
     ? `<p class="seguimiento">⏰ La carta se envió hace ${d.seguimiento.dias} días y todavía no hay respuesta. Conviene hacer seguimiento.</p>` : '';
   const filas = pasosDef.map(p => {
     const e = d.pasos[p.id];
+    const bloq = p.id === 'aprobada' && !(usuarioActual && usuarioActual.rol === 'admin') ? ' disabled' : ''; // lo marca el Directorio; a mano, solo la administradora
     return `<div class="paso-fila${e ? ' hecho' : ''}">
-      <label${p.ayuda ? ` title="${esc(p.ayuda)}"` : ''}><input type="checkbox" data-paso="${p.id}"${e ? ' checked' : ''}> ${esc(p.etiqueta)}</label>
-      ${e ? `<input type="date" data-paso-fecha="${p.id}" value="${esc(e.fecha)}" max="${hoyLocalISO()}" aria-label="Fecha: ${esc(p.etiqueta)}">
-      <input type="text" class="nota-paso" data-paso-nota="${p.id}" value="${esc(e.nota)}" maxlength="300" placeholder="nota (opcional)" aria-label="Nota: ${esc(p.etiqueta)}">` : ''}
+      <label${p.ayuda ? ` title="${esc(p.ayuda)}"` : ''}><input type="checkbox" data-paso="${p.id}"${e ? ' checked' : ''}${bloq}> ${esc(p.etiqueta)}</label>
+      ${e ? `<input type="date" data-paso-fecha="${p.id}" value="${esc(e.fecha)}" max="${hoyLocalISO()}" aria-label="Fecha: ${esc(p.etiqueta)}"${bloq}>
+      <input type="text" class="nota-paso" data-paso-nota="${p.id}" value="${esc(e.nota)}" maxlength="300" placeholder="nota (opcional)" aria-label="Nota: ${esc(p.etiqueta)}"${bloq}>` : ''}
     </div>`;
   }).join('');
   return `<section><h3>Pasos de admisión <span class="sub" style="text-transform:none;letter-spacing:0">${d.progreso} de ${pasosDef.length}</span></h3>${seg}${filas}</section>`;
@@ -1395,7 +1399,7 @@ document.addEventListener('keydown', e => {
   if (editando) abrirFicha(seleccion); else cerrarFicha();
 });
 
-['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
+['buscar', 'filtro', 'filtroCargo', 'filtroComision', 'filtroBienv', 'filtroGrupo', 'filtroPago', 'filtroAnio', 'region', 'etapa', 'periodo'].forEach(id => $(id).addEventListener('input', pintar));
 
 // Orden por columna. Cada clic en el mismo encabezado recorre: primera dirección -> la opuesta -> sin orden.
 // La fecha parte con las más recientes arriba; el nombre, de la A a la Z.
@@ -1683,8 +1687,8 @@ async function borrarCarnet(id) {
 // Cada director aprueba o rechaza desde un enlace personal (no tienen cuenta en la aplicación). Se necesita la aprobación de todos.
 // Los códigos de los enlaces solo se ven al crearlos (la pantalla de envío los usa al instante): no quedan guardados.
 const ESTADO_DIRECTOR = { aprobo: ['ok', '✔ Aprobó'], rechazo: ['mal', '✖ Rechazó'], pendiente: ['pend', 'Pendiente'], vencido: ['mal', 'Enlace vencido'], 'sin-enlace': ['', 'Sin enlace'] };
-// La sección se muestra cuando ya hay documentos recibidos o revisados y la persona todavía no es socia.
-const muestraDirectorio = d => !d.inactiva && d.etapa !== 'Socia' && !!(d.pasos.identidad || d.pasos.revisada || d.pasos.aprobada || (d.docs && d.docs.recibidos) || d.directorio);
+// La sección se muestra cuando ya hay documentos recibidos o revisados y la persona todavía no es socia, o cuando ya hay votos (también de las que ya son socias).
+const muestraDirectorio = d => !d.inactiva && (!!d.directorio || (d.etapa !== 'Socia' && !!(d.pasos.identidad || d.pasos.revisada || (d.docs && d.docs.recibidos))));
 function bloqueDirectorio(d) {
   return muestraDirectorio(d) ? '<section><h3>Validación del Directorio</h3><div id="dirFicha" class="sub">Cargando…</div></section>' : '';
 }
@@ -2322,7 +2326,7 @@ $('formGrupo').addEventListener('submit', async e => {
 });
 
 // ---- Pagos de las socias ----
-// La pantalla de pagos muestra solo a las socias y las aprobadas, con el estado de su cuota (las reglas viven en lib/pagos.js y las calcula la API).
+// La pantalla de pagos muestra a todas las socias (también a las recién aprobadas por el Directorio), con el estado de su cuota (las reglas viven en lib/pagos.js y las calcula la API).
 // Registrar y anular lo permite la API solo a quienes tienen el permiso de pagos; aquí solo se esconden los botones.
 let pagos = null;          // lo último que respondió /api/pagos
 let pagosSocia = null;     // { clave, lista } de la ventana abierta
@@ -2362,19 +2366,15 @@ async function cargarPagos() {
 }
 function pintarPagos() {
   if (!pagos) return;
-  const etapaPrevia = $('pagosEtapa').value;
-  const porEtapa = e => pagos.filas.filter(f => f.etapa === e).length;
-  $('pagosEtapa').innerHTML = '<option value="">Socias y aprobadas (' + pagos.filas.length + ')</option>' + ['Socia', 'Aprobada'].filter(porEtapa).map(e => '<option value="' + e + '">' + (e === 'Socia' ? 'Solo socias' : 'Solo aprobadas (aún no pagan la primera cuota)') + ' (' + porEtapa(e) + ')</option>').join('');
-  if ([...$('pagosEtapa').options].some(o => o.value === etapaPrevia)) $('pagosEtapa').value = etapaPrevia;
-  const q = $('pagosBuscar').value.toLowerCase(), est = $('pagosEstado').value, reg = $('pagosRegion').value, eta = $('pagosEtapa').value;
+  const q = $('pagosBuscar').value.toLowerCase(), est = $('pagosEstado').value, reg = $('pagosRegion').value;
   const rango = { atrasada: 0, pendiente: 1, 'al-dia': 2 };
   const vis = pagos.filas
-    .filter(f => (!q || [f.nombre, f.rut].join(' ').toLowerCase().includes(q)) && (!est || f.estado === est) && (!eta || f.etapa === eta) && (!reg || f.region === reg))
+    .filter(f => (!q || [f.nombre, f.rut].join(' ').toLowerCase().includes(q)) && (!est || f.estado === est) && (!reg || f.region === reg))
     .sort((a, b) => rango[a.estado] - rango[b.estado] || b.mesesDebidos - a.mesesDebidos || a.nombre.localeCompare(b.nombre, 'es'));
   const s = pagos.resumen;
   $('pagosNota').textContent = 'El control parte en ' + nombreMes(pagos.inicio) + ': lo anterior no se controla. La cuota vence el día 1 de cada mes (referencia: ' + dinero(pagos.cuotaReferencia) + ' por mes; cada pago anota su monto real). ' + (pagos.puedeRegistrar ? '' : 'Tú solo puedes ver los pagos.');
   $('pagosResumen').innerHTML =
-    '<div class="tarjeta"><div class="n">' + s.total + '</div>socias y aprobadas</div>' +
+    '<div class="tarjeta"><div class="n">' + s.total + '</div>socias</div>' +
     '<div class="tarjeta bien"><div class="n">' + s.alDia + '</div>al día</div>' +
     '<div class="tarjeta"><div class="n">' + s.pendientes + '</div>pendientes este mes</div>' +
     '<div class="tarjeta mal"><div class="n">' + s.atrasadas + '</div>atrasadas</div>' +
@@ -2393,7 +2393,7 @@ function pintarPagos() {
       <td>${pagos.puedeRegistrar ? '<button class="btn-peq" data-pagos-registrar="' + esc(f.clave) + '">Registrar pago</button>' : ''}</td>
     </tr>`).join('') : '<tr><td colspan="9" class="vacio">Sin resultados</td></tr>';
 }
-['pagosBuscar', 'pagosEstado', 'pagosEtapa', 'pagosRegion'].forEach(id => $(id).addEventListener('input', pintarPagos));
+['pagosBuscar', 'pagosEstado', 'pagosRegion'].forEach(id => $(id).addEventListener('input', pintarPagos));
 $('verPagos').addEventListener('click', () => ($('pantallaPagos').hidden ? abrirPantallaPagos() : cerrarPantallaPagos()));
 $('pagosFilas').addEventListener('click', e => {
   const ver = e.target.closest('[data-pagos-socia]'), reg = e.target.closest('[data-pagos-registrar]');

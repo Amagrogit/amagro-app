@@ -223,13 +223,13 @@ const { sinTildes } = require('./normalizar');
 const REGLAS = [
   ['Renuncia', t => /RENUNCI/.test(t) && !/RENUNCIA A DELEGADA/.test(t)],
   ['No califica', t => /NO CALIFICA/.test(t)],
-  ['Socia', t => /PAGANDO CUOTAS|PAGO (ANUAL )?REALIZADO|FUNDADORA|DIRECTORA|DELEGADA/.test(t)],
-  ['Aprobada', t => /APROBAD/.test(t) && !/SOLICITUD APROBACION/.test(t)],
+  // Aprobada por el Directorio ya es socia, aunque todavía no haya pagado la primera cuota.
+  ['Socia', t => /PAGANDO CUOTAS|PAGO (ANUAL )?REALIZADO|FUNDADORA|DIRECTORA|DELEGADA/.test(t) || (/APROBAD/.test(t) && !/SOLICITUD APROBACION/.test(t))],
   ['Con documentos', t => /CON CARTA/.test(t) && !/SIN CARTA/.test(t)],
   ['Pendiente de carta', () => true],
 ];
 
-const ETAPAS = ['Pendiente de carta', 'Con documentos', 'Aprobada', 'Socia', 'Renuncia', 'No califica', 'Sin gestión'];
+const ETAPAS = ['Pendiente de carta', 'Con documentos', 'Socia', 'Renuncia', 'No califica', 'Sin gestión'];
 
 function clasificarEtapa(texto) {
   const t = sinTildes(String(texto || '')).replace(/\s+/g, ' ').trim();
@@ -271,7 +271,7 @@ const PASOS = [
   { id: 'carnet', etiqueta: 'Copia de carnet recibida' },
   { id: 'identidad', etiqueta: 'Identidad verificada', ayuda: 'Se revisó el carnet para validar la identidad y la copia se borró' },
   { id: 'revisada', etiqueta: 'Revisada por secretaría' },
-  { id: 'aprobada', etiqueta: 'Aprobada por el directorio' },
+  { id: 'aprobada', etiqueta: 'Aprobada por el directorio', ayuda: 'Se marca sola cuando aprueban todos los directores, y con eso pasa a ser socia (aunque falte la primera cuota). A mano solo la administradora' },
   { id: 'bienvenida', etiqueta: 'Bienvenida enviada' },
   { id: 'invitadaGrupo', etiqueta: 'Invitada al grupo de WhatsApp', ayuda: 'Se le envió el enlace de invitación al grupo' },
   { id: 'enGrupo', etiqueta: 'Incorporada al grupo de WhatsApp', ayuda: 'Ya entró al grupo: en el grupo aparece «se unió usando el enlace»' },
@@ -282,7 +282,7 @@ const IDS = PASOS.map(p => p.id);
 // Días sin respuesta a la carta antes de avisar para hacer seguimiento. Es un supuesto: se pregunta a AMAGRO.
 const PLAZO_RESPUESTA_DIAS = 15;
 
-const RANGO = { 'Sin gestión': 0, 'Pendiente de carta': 1, 'Con documentos': 2, Aprobada: 3, Socia: 4 };
+const RANGO = { 'Sin gestión': 0, 'Pendiente de carta': 1, 'Con documentos': 2, Socia: 3 };
 const TERMINALES = ['Renuncia', 'No califica'];
 
 function fechaValida(s) {
@@ -330,8 +330,8 @@ function validarPasosGuardados(pasos) {
 
 // Etapa que dicen los pasos (la más avanzada), o null si no hay ninguno que la determine.
 function etapaPorPasos(pasos = {}) {
-  if (pasos.cuota) return 'Socia';
-  if (pasos.aprobada || pasos.bienvenida) return 'Aprobada'; // la bienvenida solo se envía a quien ya fue aprobada
+  // Aprobada por el Directorio ya es socia (aunque falte la primera cuota); la bienvenida solo se envía a quien ya fue aprobada.
+  if (pasos.cuota || pasos.aprobada || pasos.bienvenida) return 'Socia';
   if (pasos.cartaFirmada || pasos.carnet || pasos.identidad || pasos.revisada) return 'Con documentos';
   if (pasos.cartaEnviada) return 'Pendiente de carta';
   return null;
@@ -1347,6 +1347,11 @@ class Almacen {
     }
     return todos;
   }
+  // Después de desactivar a un director: las postulaciones a las que ya aprobaron todos los activos pasan a socia. Devuelve cuántas.
+  async revisarAprobacionesDirectorio() {
+    const { datos } = await this.sesion.pedir('POST', 'rpc/revisar_aprobaciones_directorio', { cuerpo: {} });
+    return Number(datos) || 0;
+  }
   // La administradora deja sin efecto los rechazos de una postulante (queda en el historial). Devuelve cuántos.
   async reabrirVotacionDirectorio(clave) {
     const { datos } = await this.sesion.pedir('POST', 'rpc/reabrir_votacion_directorio', { cuerpo: { p_clave: clave } });
@@ -1817,7 +1822,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
   }
   const datosActuales = async () => respuestaDatos(await leerOrigen());
   // Pagos: a las socias y a las aprobadas se les controla la cuota (reglas en lib/pagos.js).
-  const ETAPAS_EN_CONTROL = ['Socia', 'Aprobada'];
+  const ETAPAS_EN_CONTROL = ['Socia'];
   const armarPagos = async () => {
     const hoy = new Date();
     const [{ registros }, pagos] = await Promise.all([datosActuales(), almacen.listarPagos()]);
@@ -1969,6 +1974,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       if (!(await buscarRegistro(c.clave))) return fallo(404, NO_ENCONTRADA);
       const v = validarPaso(c);
       if (v.error) return fallo(400, v.error);
+      if (v.id === 'aprobada' && !sesion.esAdmin()) return fallo(403, 'Este paso lo marca el Directorio cuando todos los directores aprueban. Solo la administradora puede cambiarlo a mano.');
       await almacen.marcarPaso(c.clave, v.id, v.hecho, v.entrada);
       return ok(await datosActuales());
     }
@@ -2322,6 +2328,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
         if (id !== undefined) {
           if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id)) return fallo(400, 'Director inválido.');
           await almacen.cambiarDirector(id, v.limpio);
+          if (v.limpio.activo === false) await almacen.revisarAprobacionesDirectorio();
         } else {
           const orden = (await almacen.directores()).reduce((m, d) => Math.max(m, d.orden || 0), 0) + 1;
           await almacen.crearDirector({ ...v.limpio, orden });

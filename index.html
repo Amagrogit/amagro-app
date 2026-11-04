@@ -363,7 +363,8 @@
         <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas y una ✕ para cerrarlo; vuelve a salir al entrar o al actualizar.</li>
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Pasan a la pestaña <b>Otras</b> y salen de los avisos, <b>no se borra nada</b>, y desde ahí se pueden <b>volver a activar</b> (filtro «No activas · postulaciones antiguas»).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
-        <li><b>Postulación aprobada:</b> en su ficha aparece <b>✉ Carta de bienvenida</b>: un correo corto con el enlace a su carta de bienvenida (PDF con logo y su nombre) y los enlaces a los estatutos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
+        <li><b>Validación del Directorio:</b> al verificar la identidad y borrar el carnet, se abre sola la pantalla para enviar a cada director su enlace personal (se abre en Gmail y tú envías). Cada director ve los datos de la postulante y su carta firmada, y aprueba o rechaza. Cuando aprueban <b>todos</b>, pasa sola a <b>Socia</b> (aunque aún no pague la primera cuota). Si uno rechaza, queda detenida y la administradora decide: reabrir la votación o rechazarla.</li>
+        <li><b>Socia recién aprobada por el Directorio:</b> en la pestaña <b>Socias</b> aparece con la marca <b>Aprobada por el Directorio</b> y el botón <b>✉ Enviar bienvenida</b> (también se filtra con «Bienvenida por enviar»). En su ficha aparece <b>✉ Carta de bienvenida</b>: un correo corto con el enlace a su carta de bienvenida (PDF con logo y su nombre) y los enlaces a los estatutos. Se abre en Gmail y queda anotado el paso «Bienvenida enviada».</li>
         <li><b>Cargos, condición y comisiones:</b> en la ficha se ve si es <b>socia fundadora</b>, sus cargos de hoy (presidenta, tesorera, delegada regional con su región…) y las comisiones donde es <b>integrante</b> o <b>coordinadora</b>; se agregan o se quitan ahí mismo. En el listado, los filtros «Cargos» y «Comisiones» muestran quién es quién. La administradora crea comisiones en ⚙ → Comisiones.</li>
         <li><b>El menú <kbd>⚙</kbd></b> (arriba a la derecha) reúne las herramientas. Cada panel que se abre tiene su botón <b>✕ Cerrar</b>.</li>
       </ul>
@@ -544,6 +545,7 @@
     <select id="filtroCargo" title="Filtrar por cargo o por condición de socia fundadora"><option value="">Cargos: todos</option></select>
     <select id="filtroComision" title="Filtrar por comisión"><option value="">Con o sin comisiones</option></select>
     <select id="filtroAnio" title="Filtrar por año de postulación"><option value="">Todos los años</option></select>
+    <select id="filtroBienv" title="Socias aprobadas por el Directorio a las que falta enviarles la carta de bienvenida"><option value="">Bienvenida: todas</option><option value="pendiente">Bienvenida por enviar</option></select>
     <select id="filtroGrupo" title="Filtrar por el grupo de WhatsApp de las socias"><option value="">Grupo WhatsApp: todas</option><option value="sin">Sin invitar</option><option value="invitada">Invitadas (aún no entran)</option><option value="en">En el grupo</option></select>
     <select id="filtroPago" title="Filtrar por estado de la cuota"><option value="">Todos los pagos</option><option value="al-dia">Al día</option><option value="pendiente">Pendiente</option><option value="atrasada">Atrasada</option></select>
     <select id="region"><option value="">Todas las regiones</option></select>
@@ -575,7 +577,6 @@
         <option value="pendiente">Pendientes (cuota de este mes)</option>
         <option value="al-dia">Al día</option>
       </select>
-      <select id="pagosEtapa" title="Filtrar por etapa: socias o aprobadas que aún no pagan"><option value="">Socias y aprobadas</option></select>
       <select id="pagosRegion"><option value="">Todas las regiones</option></select>
       <button class="sec btn-peq" id="pagosCsv" title="Descarga la lista de pagos para Excel">Descargar CSV</button>
     </div>
@@ -745,9 +746,9 @@
 </div>
 
 <script src="config.js?v=c8ec37a6"></script>
-<script src="app.js?v=347c8698"></script>
+<script src="app.js?v=b61f31f2"></script>
 <script src="mensaje.js?v=fee008b9"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=cc79bed3"></script>
+<script src="ui.js?v=827fa0a0"></script>
 </body>
 </html>
