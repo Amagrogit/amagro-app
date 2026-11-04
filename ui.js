@@ -253,7 +253,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
@@ -583,7 +583,7 @@ function puedePedirDatos(d) {
 }
 // Si la ventana se abrió desde la lista (sin ficha abierta), al cerrarla se quita la selección de la fila.
 function soltarSeleccion() {
-  soltarSeleccion();
+  if (seleccion !== null && !$('ficha').classList.contains('abierta')) { seleccion = null; pintar(); }
 }
 function abrirModalCarta(fila = seleccion) {
   const d = datos.find(x => x.fila === fila);
@@ -1384,6 +1384,7 @@ $('cartaConEnlace').addEventListener('change', () => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (!$('modalDoc').hidden) return cerrarDocumento();
+  if (!$('modalDirectorio').hidden) return cerrarModalDirectorio();
   if (!$('modalBienvenida').hidden) return cerrarModalBienvenida();
   if (!$('modalNoAcep').hidden) return cerrarModalNoAcep();
   if (!$('modalCarta').hidden) return cerrarModalCarta();
@@ -1673,17 +1674,28 @@ async function borrarCarnet(id) {
   if (r.error) return mostrar(r.error, true);
   const p = await guardarPaso('identidad', true);
   if (p) mostrar('Carnet borrado e identidad verificada.');
+  // Con la identidad verificada sigue la validación del Directorio: se abre la pantalla para enviarles el enlace a cada director.
+  const nueva = fichaActual();
+  if (p && nueva && muestraDirectorio(nueva) && !(nueva.directorio && nueva.directorio.estado === 'aprobada')) abrirModalDirectorio(nueva);
 }
 
 // ---- Validación del Directorio ----
 // Cada director aprueba o rechaza desde un enlace personal (no tienen cuenta en la aplicación). Se necesita la aprobación de todos.
-// Los códigos de los enlaces solo se ven al crearlos: no quedan guardados.
-let enlacesDirectorio = null; // { clave, enlaces: [{ director, nombre, cargo, correo, url, vence_en }] }
+// Los códigos de los enlaces solo se ven al crearlos (la pantalla de envío los usa al instante): no quedan guardados.
 const ESTADO_DIRECTOR = { aprobo: ['ok', '✔ Aprobó'], rechazo: ['mal', '✖ Rechazó'], pendiente: ['pend', 'Pendiente'], vencido: ['mal', 'Enlace vencido'], 'sin-enlace': ['', 'Sin enlace'] };
 // La sección se muestra cuando ya hay documentos recibidos o revisados y la persona todavía no es socia.
-const muestraDirectorio = d => !d.inactiva && d.etapa !== 'Socia' && !!(d.pasos.identidad || d.pasos.revisada || d.pasos.aprobada || (d.docs && d.docs.recibidos));
+const muestraDirectorio = d => !d.inactiva && d.etapa !== 'Socia' && !!(d.pasos.identidad || d.pasos.revisada || d.pasos.aprobada || (d.docs && d.docs.recibidos) || d.directorio);
 function bloqueDirectorio(d) {
   return muestraDirectorio(d) ? '<section><h3>Validación del Directorio</h3><div id="dirFicha" class="sub">Cargando…</div></section>' : '';
+}
+// Marca corta para el listado: la votación detenida por un rechazo o en curso.
+function chipDirectorio(d) {
+  const x = d.directorio;
+  if (!x || d.inactiva) return '';
+  const plazo = x.plazoVencido ? ' · pasó el plazo de los estatutos' : '';
+  if (x.estado === 'detenida') return `<span class="chip mal" title="Un director rechazó la postulación${plazo}. La administradora debe decidir.">⚠ Rechazo del Directorio</span>`;
+  if (x.estado === 'en-curso') return `<span class="chip ${x.plazoVencido ? 'mal' : 'pend'}" title="${esc(x.aprobaron + ' de ' + x.total + ' directores aprobaron' + plazo)}">Directorio ${x.aprobaron}/${x.total}${x.plazoVencido ? ' ⏰' : ''}</span>`;
+  return '';
 }
 async function cargarDirectorio(d) {
   if (!muestraDirectorio(d) || !$('dirFicha')) return;
@@ -1693,49 +1705,134 @@ async function cargarDirectorio(d) {
     if (!$('dirFicha') || !actual || actual.clave !== d.clave) return; // se cambió de ficha mientras cargaba
     if (j.error) { $('dirFicha').textContent = j.error; return; }
     $('dirFicha').className = '';
-    $('dirFicha').innerHTML = pintarDirectorio(d, j);
+    $('dirFicha').innerHTML = pintarDirectorio(j);
   } catch { if ($('dirFicha')) $('dirFicha').textContent = 'No se pudo cargar la validación del Directorio.'; }
 }
-function pintarDirectorio({ clave }, { resumen: r, paginaSubida }) {
-  const titulo = {
-    'sin-enlaces': 'Todavía no se les envían los enlaces a los directores.',
-    'en-curso': `${r.aprobaron} de ${r.total} directores aprobaron · faltan ${r.faltan}.`,
-    detenida: `⚠ Detenida: ${r.rechazaron === 1 ? 'un director rechazó' : r.rechazaron + ' directores rechazaron'} la postulación. La administradora debe decidir qué hacer.`,
-    aprobada: '✔ Aprobada por todo el Directorio.',
-  }[r.estado];
-  const filas = r.lista.map(x => {
+const diasTexto = n => n + (n === 1 ? ' día hábil' : ' días hábiles');
+function filasDirectores(r) {
+  return r.lista.map(x => {
     const [clase, texto] = ESTADO_DIRECTOR[x.estado];
     const detalle = x.fecha ? ' · ' + esc(fechaHoraCL(x.fecha)) : x.estado === 'pendiente' && x.vence ? ' · vence el ' + esc(fechaCL(String(x.vence).slice(0, 10))) : '';
     return `<div class="hist-fila"><b>${esc(x.nombre)}</b>${x.cargo ? ' <span class="sub">(' + esc(x.cargo) + ')</span>' : ''} · <span class="chip ${clase}">${texto}</span>${detalle}${x.motivo ? '<br><i>«' + esc(x.motivo) + '»</i>' : ''}</div>`;
   }).join('');
-  // Solo se muestran los enlaces de quienes todavía no votan (a los demás ya no les sirven).
-  const porVotar = enlacesDirectorio && enlacesDirectorio.clave === clave ? enlacesDirectorio.enlaces.map((e, i) => ({ e, i })).filter(({ e }) => r.lista.some(x => x.director === e.director && x.estado === 'pendiente')) : [];
-  const nuevos = porVotar.length ? `<div class="aviso" style="margin:8px 0 0">
-      <b>Enlaces listos</b> (cada uno es personal, sirve para votar una sola vez y vence el ${esc(fechaCL(String(porVotar[0].e.vence_en).slice(0, 10)))}). Cópialos ahora: no se pueden volver a ver.
-      ${porVotar.map(({ e, i }) => `<div style="margin:8px 0 0"><b>${esc(e.nombre)}</b> <span class="sub">${esc(e.correo)}</span>
-        <input type="text" readonly value="${esc(e.url)}" style="width:100%;margin:4px 0">
-        <button class="btn-peq" data-dir-copiar="${i}">Copiar enlace</button></div>`).join('')}</div>` : '';
-  const crear = r.estado === 'aprobada' ? '' : !paginaSubida
-    ? '<p class="sub">Falta configurar la dirección de la página de subida para poder crear enlaces.</p>'
-    : `<button class="sec btn-peq dir-edicion" data-dir-crear style="margin-top:8px">${r.estado === 'sin-enlaces' ? 'Crear enlaces para los directores' : 'Crear enlaces nuevos (para quienes faltan)'}</button>`;
-  return `<p style="margin:0 0 6px"><b>${esc(titulo)}</b></p>${filas}${crear}${nuevos}`;
 }
-async function crearEnlacesDirectorio() {
+function pintarDirectorio({ resumen: r, paginaSubida, puedeDecidir, plazoDiasHabiles }) {
+  const titulo = {
+    'sin-enlaces': 'Todavía no se les envían los enlaces a los directores.',
+    'en-curso': `${r.aprobaron} de ${r.total} directores aprobaron · faltan ${r.faltan}.`,
+    detenida: `⚠ Detenida: ${r.rechazaron === 1 ? 'un director rechazó' : r.rechazaron + ' directores rechazaron'} la postulación.`,
+    aprobada: '✔ Aprobada por todo el Directorio.',
+  }[r.estado];
+  const plazo = r.diasHabiles == null ? '' : `<p class="sub" style="margin:4px 0">Lleva ${diasTexto(r.diasHabiles)} esperando la respuesta del Directorio${r.plazoVencido ? ` — <b style="color:var(--alerta)">⚠ ya pasó el plazo de ${plazoDiasHabiles} días hábiles que dan los estatutos</b>` : ` (plazo de los estatutos: ${plazoDiasHabiles} días hábiles)`}.</p>`;
+  const enviar = r.estado === 'aprobada' ? '' : !paginaSubida
+    ? '<p class="sub">Falta configurar la dirección de la página de subida para poder crear enlaces.</p>'
+    : `<button class="sec btn-peq dir-edicion" data-dir-enviar style="margin-top:8px">${r.estado === 'sin-enlaces' ? '✉ Enviar a los directores' : '✉ Reenviar a quienes faltan'}</button>`;
+  const decidir = r.estado !== 'detenida' ? '' : puedeDecidir
+    ? `<div class="aviso" style="margin:8px 0 0"><b>La administradora decide:</b> ¿qué se hace con esta postulación?<br>
+        <button class="btn-peq" data-dir-decidir="reabrir" title="El rechazo deja de contar (queda en el historial) y ese director recibe un enlace nuevo para votar otra vez">Reabrir la votación</button>
+        <button class="sec btn-peq" data-dir-decidir="rechazar" title="La postulación pasa a la etapa «No califica»">Rechazar definitivamente</button></div>`
+    : '<p class="sub" style="margin:6px 0 0">La administradora debe decidir qué hacer: reabrir la votación o rechazar la postulación.</p>';
+  return `<p style="margin:0 0 6px"><b>${esc(titulo)}</b></p>${plazo}${filasDirectores(r)}${enviar}${decidir}`;
+}
+
+// Pantalla de envío: un correo por director, con su enlace personal, listo en Gmail (la persona lo revisa y pulsa Enviar).
+// Se abre sola al verificar la identidad y borrar el carnet, o desde el botón de la ficha.
+let dirEnvio = null; // { d, enlaces: [{ director, nombre, cargo, correo, url, vence_en, abierto }], resumen, error, ocupado }
+function tituloDirEnvio() { return 'Enviar a los directores · ' + ((dirEnvio && dirEnvio.d.nombre) || ''); }
+function pintarModalDirectorio() {
+  if (!dirEnvio) return;
+  const { enlaces, resumen: r, error, ocupado } = dirEnvio;
+  $('dirEnvioTitulo').textContent = tituloDirEnvio();
+  let h = '';
+  if (error) h += `<p class="sub" style="color:var(--alerta)">${esc(error)}</p>`;
+  if (ocupado) h += '<p class="sub">Preparando los enlaces…</p>';
+  else if (enlaces.length) {
+    const abiertos = enlaces.filter(e => e.abierto).length;
+    h += `<p class="sub" style="margin:0 0 8px">Cada correo lleva el enlace personal de un director. Pulsa <b>Enviar por Gmail</b>, revisa el correo y envíalo allí. Los enlaces solo se ven ahora: si cierras sin enviar alguno, tendrás que crear enlaces nuevos. <b>${abiertos} de ${enlaces.length}</b> abiertos en Gmail.</p>`;
+    h += enlaces.map((e, i) => `<div class="hist-fila"><b>${esc(e.nombre)}</b>${e.cargo ? ' <span class="sub">(' + esc(e.cargo) + ')</span>' : ''} · <span class="sub">${esc(e.correo)}</span><br>
+        <button class="btn-peq" data-dir-gmail="${i}" title="Abre Gmail con el correo listo; tú revisas y pulsas Enviar">${e.abierto ? '↻ Abrir de nuevo en Gmail' : '✉ Enviar por Gmail'}</button>
+        <button class="sec btn-peq" data-dir-copia="${i}">Copiar enlace</button>${e.abierto ? ' <span class="chip ok">✓ Gmail abierto</span>' : ''}</div>`).join('');
+  } else if (r) {
+    h += `<p style="margin:0 0 6px"><b>${r.estado === 'aprobada' ? '✔ Aprobada por todo el Directorio: no hay nada que enviar.' : 'Ya se enviaron enlaces a los directores. Los códigos no se pueden volver a ver.'}</b></p>${filasDirectores(r)}`;
+    if (r.estado !== 'aprobada') h += '<button class="btn-peq" data-dir-nuevos style="margin-top:8px" title="Los enlaces anteriores de quienes faltan dejan de servir">Crear enlaces nuevos para quienes faltan</button>';
+  }
+  $('dirEnvioCuerpo').innerHTML = h;
+}
+async function pedirEnlacesDirectorio() {
+  dirEnvio.ocupado = true; dirEnvio.error = ''; pintarModalDirectorio();
+  const r = await post('/api/directorio/enlaces', { clave: dirEnvio.d.clave });
+  dirEnvio.ocupado = false;
+  if (r.error) dirEnvio.error = r.error;
+  else { dirEnvio.enlaces = r.enlaces.map(e => ({ ...e, abierto: false })); dirEnvio.resumen = r.resumen; }
+  pintarModalDirectorio();
+}
+async function abrirModalDirectorio(d) {
+  if (!d || d.inactiva) return;
+  dirEnvio = { d, enlaces: [], resumen: null, error: '', ocupado: true };
+  pintarModalDirectorio();
+  $('modalDirectorio').hidden = false;
+  let j;
+  try { j = await (await fetch('/api/directorio?clave=' + encodeURIComponent(d.clave))).json(); } catch { j = { error: 'No se pudo consultar la votación.' }; }
+  if (!dirEnvio || dirEnvio.d !== d) return;
+  if (j.error) { dirEnvio.ocupado = false; dirEnvio.error = j.error; return pintarModalDirectorio(); }
+  if (!j.paginaSubida) { dirEnvio.ocupado = false; dirEnvio.error = 'Falta configurar la dirección de la página de subida para poder crear enlaces.'; return pintarModalDirectorio(); }
+  dirEnvio.resumen = j.resumen;
+  if (j.resumen.estado === 'sin-enlaces') return pedirEnlacesDirectorio(); // primera vez: los enlaces se crean solos
+  dirEnvio.ocupado = false; pintarModalDirectorio();
+}
+async function cerrarModalDirectorio() {
+  if (!dirEnvio) { $('modalDirectorio').hidden = true; return; }
+  const sinAbrir = dirEnvio.enlaces.filter(e => !e.abierto);
+  if (sinAbrir.length && !confirm('Todavía no abriste en Gmail el correo de: ' + sinAbrir.map(e => e.nombre).join(', ') + '.\n\nLos enlaces no se pueden volver a ver: tendrías que crear enlaces nuevos.\n\n¿Cerrar igual?')) return;
+  const { d, enlaces } = dirEnvio;
+  dirEnvio = null; $('modalDirectorio').hidden = true;
+  soltarSeleccion();
+  if (enlaces.length && !sinAbrir.length) { // se prepararon todos los correos: se cierra la ficha para pasar a la siguiente persona
+    cerrarFicha();
+    mostrar('✓ Se abrieron en Gmail los ' + enlaces.length + ' correos para los directores (' + d.nombre + '). Revisa y pulsa Enviar en cada uno.');
+  } else if (fichaActual() && fichaActual().clave === d.clave) cargarDirectorio(d);
+  const r = await fetch('/api/postulaciones');
+  if (r.ok) cargar(await r.json(), true);
+}
+$('modalDirectorio').addEventListener('click', async e => {
+  if (e.target === $('modalDirectorio') || e.target.closest('#cerrarDirEnvio')) return cerrarModalDirectorio();
+  if (!dirEnvio) return;
+  const g = e.target.closest('[data-dir-gmail]');
+  if (g) {
+    const en = dirEnvio.enlaces[Number(g.dataset.dirGmail)], p = dirEnvio.d;
+    const m = construirCorreoDirector({ director: en, postulante: { nombre: p.nombre, region: p.region, empresa: p.empresa }, url: en.url, vence: String(en.vence_en).slice(0, 10) });
+    // Se abre dentro del clic, para que el navegador no bloquee la ventana.
+    const ventana = window.open(urlGmail({ destinatario: m.destinatario, asunto: m.asunto, cuerpo: m.cuerpo, cuenta: correoEnvio, copia: remitente }), '_blank');
+    if (!ventana) return mostrar('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
+    en.abierto = true; pintarModalDirectorio();
+    return;
+  }
+  const c = e.target.closest('[data-dir-copia]');
+  if (c) {
+    const ok = await copiarTexto(dirEnvio.enlaces[Number(c.dataset.dirCopia)].url);
+    return mostrar(ok ? 'Enlace copiado.' : 'No se pudo copiar automáticamente: ábrelo en Gmail con el botón de al lado.', !ok);
+  }
+  if (e.target.closest('[data-dir-nuevos]')) {
+    if (confirm('Se crearán enlaces nuevos para los directores que faltan. Los enlaces anteriores de ellos dejarán de servir (si ya se los enviaste, tendrás que enviarles el nuevo).\n\n¿Seguir?')) pedirEnlacesDirectorio();
+  }
+});
+
+$('ficha').addEventListener('click', async e => {
+  if (e.target.closest('[data-dir-enviar]')) return abrirModalDirectorio(fichaActual());
+  const dec = e.target.closest('[data-dir-decidir]');
+  if (!dec) return;
   const d = fichaActual();
   if (!d) return;
-  const r = await post('/api/directorio/enlaces', { clave: d.clave });
+  const rechazar = dec.dataset.dirDecidir === 'rechazar';
+  if (!confirm(rechazar
+    ? '¿Rechazar definitivamente a ' + d.nombre + '?\n\nLa postulación pasará a la etapa «No califica». Queda anotado en el historial.'
+    : '¿Reabrir la votación de ' + d.nombre + '?\n\nEl rechazo dejará de contar (queda en el historial con su motivo) y ese director podrá votar de nuevo con un enlace nuevo.')) return;
+  const r = await post('/api/directorio/decidir', { clave: d.clave, accion: dec.dataset.dirDecidir });
   if (r.error) return mostrar(r.error, true);
-  enlacesDirectorio = { clave: d.clave, enlaces: r.enlaces };
-  cargarDirectorio(d);
-  mostrar('Enlaces creados: uno por cada director que aún no votó.');
-}
-$('ficha').addEventListener('click', async e => {
-  if (e.target.closest('[data-dir-crear]')) return crearEnlacesDirectorio();
-  const c = e.target.closest('[data-dir-copiar]');
-  if (c && enlacesDirectorio) {
-    const ok = await copiarTexto(enlacesDirectorio.enlaces[Number(c.dataset.dirCopiar)].url);
-    mostrar(ok ? 'Enlace copiado.' : 'No se pudo copiar automáticamente: selecciona el enlace y presiona Ctrl+C.', !ok);
-  }
+  cargar(r, true);
+  const nueva = fichaActual();
+  if (nueva) { abrirFicha(nueva.fila, false, true); }
+  mostrar(rechazar ? 'La postulación pasó a «No califica».' : 'Votación reabierta. Crea enlaces nuevos con «Reenviar a quienes faltan».');
 });
 
 // Panel de la administradora (⚙ → Directorio): a quiénes se envía el enlace de validación. Un director con votos no se borra: se desactiva.
@@ -1915,7 +2012,7 @@ async function consultarPendientes() {
     actualizarAvisoCorrecciones(p.correcciones || 0);
     if (!$('panelCorrecciones').hidden && firmaPendientes !== null && p.firma !== firmaPendientes) cargarCorrecciones();
     const cambio = firmaPendientes !== null && p.firma !== firmaPendientes;
-    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden || !$('modalBienvenida').hidden;
+    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden || !$('modalBienvenida').hidden || !$('modalDirectorio').hidden;
     if (cambio && !ocupada) {
       const nuevos = p.pendientes > datos.filter(x => x.pendienteRevision).length;
       const d = await fetch('/api/postulaciones');

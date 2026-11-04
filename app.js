@@ -1337,6 +1337,21 @@ class Almacen {
     const { datos } = await this.sesion.pedir('GET', `votos_directorio?select=id,director,director_nombre,creado_en,vence_en,voto,motivo,votado_en&clave=eq.${filtro(clave)}&revocado=eq.false&order=creado_en.desc`);
     return Array.isArray(datos) ? datos : [];
   }
+  // Votos vigentes de TODAS las postulaciones (para marcar en el listado cuáles están detenidas o en curso).
+  async votosDirectorioTodos() {
+    const todos = [];
+    for (let desde = 0; ; desde += PAGINA) {
+      const { datos } = await this.sesion.pedir('GET', `votos_directorio?select=clave,director,director_nombre,creado_en,vence_en,voto,motivo,votado_en&revocado=eq.false&order=creado_en.asc&limit=${PAGINA}&offset=${desde}`);
+      todos.push(...(datos || []));
+      if (!datos || datos.length < PAGINA) break;
+    }
+    return todos;
+  }
+  // La administradora deja sin efecto los rechazos de una postulante (queda en el historial). Devuelve cuántos.
+  async reabrirVotacionDirectorio(clave) {
+    const { datos } = await this.sesion.pedir('POST', 'rpc/reabrir_votacion_directorio', { cuerpo: { p_clave: clave } });
+    return Number(datos) || 0;
+  }
   // Crea un enlace para cada director que aún no votó. Los códigos solo se ven ahora: la base guarda su huella.
   async crearVotosDirectorio(clave, datos, dias = 30) {
     const { datos: lista } = await this.sesion.pedir('POST', 'rpc/crear_votos_directorio', { cuerpo: { p_clave: clave, p_datos: datos, p_dias: dias } });
@@ -1768,15 +1783,21 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
   }
 
   async function respuestaDatos(o) {
-    const [ediciones, documentos, catalogo] = await Promise.all([almacen.leerEdiciones(), almacen.resumenDocumentos(), almacen.comisiones()]);
+    const [ediciones, documentos, catalogo, directores, votos] = await Promise.all([almacen.leerEdiciones(), almacen.resumenDocumentos(), almacen.comisiones(),
+      almacen.directores().catch(() => []), almacen.votosDirectorioTodos().catch(() => [])]); // sin las tablas del Directorio (falta ejecutar el esquema) la app sigue funcionando
     const r = procesarCSV(o.texto, new Date(), soloCampos(ediciones), soloPasos(ediciones));
     const porId = new Map(catalogo.map(c => [c.id, c]));
+    const votosDe = new Map();
+    for (const v of votos) { if (!votosDe.has(v.clave)) votosDe.set(v.clave, []); votosDe.get(v.clave).push(v); }
     for (const reg of r.registros) {
       // Comisiones de la socia con su nombre (las que ya no existen en la lista se ignoran).
       reg.comisiones = reg.comisionesAsignadas.filter(a => porId.has(a.id)).map(a => ({ ...porId.get(a.id), rol: a.rol }));
       const docs = documentos[reg.clave] || null;
       reg.docs = docs;
       reg.pendienteRevision = !reg.inactiva && pendienteDeRevision(docs, reg.pasos); // lo no activo no genera avisos
+      const vs = votosDe.get(reg.clave);
+      const dr = vs ? DIR.resumenVotos(directores, vs) : null;
+      reg.directorio = dr && dr.estado !== 'sin-enlaces' ? { estado: dr.estado, aprobaron: dr.aprobaron, rechazaron: dr.rechazaron, total: dr.total, diasHabiles: dr.diasHabiles, plazoVencido: dr.plazoVencido } : null;
     }
     return {
       fuente: o.fuente,
@@ -2328,7 +2349,22 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       const clave = consulta.get('clave');
       if (!clave) return fallo(400, 'Falta la postulante.');
       const [directores, votos] = await Promise.all([almacen.directores(), almacen.votosDirectorio(clave)]);
-      return ok({ resumen: DIR.resumenVotos(directores, votos), paginaSubida: !!paginaSubida() });
+      return ok({ resumen: DIR.resumenVotos(directores, votos), paginaSubida: !!paginaSubida(), puedeDecidir: sesion.esAdmin(), plazoDiasHabiles: DIR.PLAZO_DIAS_HABILES });
+    }
+    // La administradora decide qué hacer con una postulación detenida porque un director la rechazó:
+    //   rechazar → queda en la etapa «No califica»;  reabrir → los rechazos dejan de contar y esos directores pueden votar de nuevo (con un enlace nuevo).
+    if (ruta === 'POST /api/directorio/decidir') {
+      if (!sesion.esAdmin()) return fallo(403, 'Solo la administradora puede decidir qué hacer con una postulación que el Directorio rechazó.');
+      const a = analizar(cuerpo); if (a.error) return a.error;
+      const { clave, accion } = a.cuerpo || {};
+      const registro = await buscarRegistro(clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (accion !== 'rechazar' && accion !== 'reabrir') return fallo(400, 'Acción inválida.');
+      const resumen = DIR.resumenVotos(await almacen.directores(), await almacen.votosDirectorio(registro.clave));
+      if (resumen.estado !== 'detenida') return fallo(409, 'Esta postulación no está detenida por un rechazo del Directorio.');
+      if (accion === 'rechazar') await almacen.editarCampos(registro.clave, { etapa: 'No califica' });
+      else await almacen.reabrirVotacionDirectorio(registro.clave);
+      return ok(await datosActuales());
     }
     // Crea el enlace personal de cada director que aún no votó. Los códigos se muestran una sola vez: no quedan guardados.
     if (ruta === 'POST /api/directorio/enlaces') {
@@ -3213,6 +3249,7 @@ definir("lib/directorio", function (module, exports, require, __dirname, Buffer)
 
 const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DIAS_ENLACE = 30; // vigencia del enlace de cada director
+const PLAZO_DIAS_HABILES = 30; // el Directorio responde dentro de 30 días hábiles (estatutos, art. 9)
 
 const limpiar = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -3237,6 +3274,16 @@ function datosParaDirector(registro) {
   };
 }
 
+// Días hábiles (lunes a viernes, sin feriados) transcurridos desde una fecha: no cuenta el día de partida y sí el de llegada.
+function diasHabiles(desde, hasta) {
+  const dia = v => { const t = new Date(v); return isNaN(t) ? null : Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()); };
+  const a = dia(desde), b = dia(hasta);
+  if (a == null || b == null || b <= a) return 0;
+  let n = 0;
+  for (let t = a + 864e5; t <= b; t += 864e5) { const w = new Date(t).getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+
 // Resume la votación de una postulante.
 //   directores: [{ id, nombre, cargo, correo, activo }]   votos: [{ director, director_nombre, voto, motivo, votado_en, vence_en, revocado, creado_en }]
 // estado: 'sin-enlaces' (aún no se envía a nadie) | 'en-curso' | 'detenida' (alguien rechazó) | 'aprobada' (todos aprobaron)
@@ -3258,10 +3305,14 @@ function resumenVotos(directores, votos, ahora = new Date()) {
     : rechazaron ? 'detenida'
     : aprobaron === lista.length ? 'aprobada'
     : 'en-curso';
-  return { estado, total: lista.length, aprobaron, rechazaron, faltan: lista.length - aprobaron - rechazaron, lista };
+  // Desde cuándo espera: el primer enlace que se le envió al Directorio. Mientras no esté aprobada, corre el plazo.
+  const desde = vigentes.reduce((m, v) => (!m || String(v.creado_en) < m ? String(v.creado_en) : m), '') || null;
+  const esperando = estado === 'en-curso' || estado === 'detenida';
+  const habiles = desde && esperando ? diasHabiles(desde, ahora) : null;
+  return { estado, total: lista.length, aprobaron, rechazaron, faltan: lista.length - aprobaron - rechazaron, lista, desde, diasHabiles: habiles, plazoVencido: habiles != null && habiles > PLAZO_DIAS_HABILES };
 }
 
-module.exports = { DIAS_ENLACE, validarDirector, datosParaDirector, resumenVotos };
+module.exports = { DIAS_ENLACE, PLAZO_DIAS_HABILES, validarDirector, datosParaDirector, diasHabiles, resumenVotos };
 
 });
 

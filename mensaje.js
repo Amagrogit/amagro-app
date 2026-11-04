@@ -165,7 +165,35 @@
     };
   }
 
-  const api = { FIRMA_EQUIPO, construirMensaje, construirCorreoCarta, construirInvitacion, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
+  // Correo para cada director con su enlace personal: ahí ve los datos de la postulante y su carta firmada, y aprueba o rechaza.
+  // Solo lleva lo que el director verá igualmente en el enlace (nada del carnet ni del RUT). vence: fecha aaaa-mm-dd.
+  function construirCorreoDirector({ director, postulante, url, vence, firma = FIRMA_EQUIPO }) {
+    const primer = capitalizar(String(director.nombre || '').trim().split(/\s+/)[0]) || 'hola';
+    const quien = nombreCompleto(postulante.nombre) || 'Una postulante';
+    const region = nombreCompleto(postulante.region), empresa = String(postulante.empresa || '').trim();
+    const detalle = [region && 'región ' + region, empresa && 'empresa u organización: ' + empresa].filter(Boolean).join('; ');
+    return {
+      destinatario: director.correo,
+      asunto: conNombre('AMAGRO AG · Validación del Directorio', postulante.nombre),
+      cuerpo: [
+        `Hola ${primer},`,
+        '',
+        `${quien} postuló para ser socia de AMAGRO AG${detalle ? ' (' + detalle + ')' : ''}. Ya entregó su carta de solicitud firmada y la secretaría verificó su identidad.`,
+        '',
+        'Para que su ingreso sea aceptado necesitamos la aprobación de todo el Directorio. En este enlace personal puedes ver sus datos y su carta firmada, y aprobar o rechazar su ingreso:',
+        '',
+        url,
+        '',
+        `El enlace es solo para ti y se vota una sola vez.${vence ? ' Vence el ' + fechaCL(vence) + '.' : ''}`,
+        '',
+        'Muchas gracias,',
+        firma,
+        ...(firma === FIRMA_EQUIPO ? [] : ['AMAGRO AG']),
+      ].join('\n'),
+    };
+  }
+
+  const api = { FIRMA_EQUIPO, construirMensaje, construirCorreoCarta, construirInvitacion, construirCorreoDirector, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(raiz, api);
 })(typeof window !== 'undefined' ? window : globalThis);
