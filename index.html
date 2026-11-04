@@ -97,12 +97,33 @@
   .vacio { padding:30px; text-align:center; color:var(--suave); }
   .aviso { background:#fff8e1; border:1px solid #f0d98a; border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:13px; }
   /* Ficha lateral */
-  #ficha { position:fixed; top:0; right:0; bottom:0; width:min(460px,100%); background:#fff; border-left:1px solid var(--borde); box-shadow:-6px 0 20px rgba(0,0,0,.12); overflow:auto; transform:translateX(105%); transition:transform .2s; z-index:10; }
+  #ficha { position:fixed; top:0; right:0; bottom:0; width:min(1120px,72vw); background:#fff; border-left:1px solid var(--borde); box-shadow:-6px 0 20px rgba(0,0,0,.12); overflow:auto; transform:translateX(105%); transition:transform .2s; z-index:10; }
   #ficha.abierta { transform:none; }
-  #ficha .cab { position:sticky; top:0; background:#fff; border-bottom:3px solid var(--verde); padding:14px 18px; display:flex; gap:10px; justify-content:space-between; align-items:flex-start; }
-  #ficha h2 { margin:0 0 4px; font-size:18px; color:var(--azul); }
+  #ficha .cab { position:sticky; top:0; z-index:2; background:#fff; border-bottom:3px solid var(--verde); padding:14px 22px 10px; }
+  #ficha .cab-fila { display:flex; gap:12px; justify-content:space-between; align-items:flex-start; }
+  #ficha h2 { margin:0 0 4px; font-size:21px; color:var(--azul); }
+  /* Resumen de una línea del estado de la persona, siempre a la vista */
+  .estado-ficha { display:flex; flex-wrap:wrap; gap:4px 6px; margin-top:8px; align-items:center; }
+  .estado-ficha .etq { color:var(--suave); font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
+  /* «Siguiente paso»: lo que toca hacer con esta persona */
+  .siguiente { margin:12px 22px 0; padding:10px 14px; border-radius:10px; background:#e8f1fb; border:1px solid #bcd6ee; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; justify-content:space-between; }
+  .siguiente b { color:#0b57a4; }
+  .siguiente.listo { background:var(--ok-bg); border-color:#bfe0bb; }
+  /* Cuerpo en dos columnas: la persona a la izquierda, el proceso a la derecha */
+  #ficha .cuerpo { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:0 22px; padding:6px 22px 24px; align-items:start; }
+  #ficha .col > section { padding:14px 0; border-bottom:1px solid var(--borde); }
+  #ficha .col > section:last-child { border-bottom:0; }
+  #ficha .dos-col { display:grid; grid-template-columns:1fr 1fr; gap:4px 22px; }
+  #ficha .dos-col dl { grid-template-columns:105px 1fr; }
+  .grupo-pasos { font-size:12px; color:var(--suave); margin:10px 0 2px; font-weight:600; }
+  .grupo-pasos:first-of-type { margin-top:0; }
+  .directores { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 14px; }
+  .director { border:1px solid var(--borde); border-radius:8px; padding:6px 10px; font-size:13px; }
+  .director b { display:block; }
+  .director i { color:var(--suave); }
+  .director .motivo { margin-top:3px; font-style:italic; color:var(--suave); }
   #ficha .cerrar { background:none; color:var(--suave); font-size:22px; line-height:1; padding:2px 8px; border:1px solid var(--borde); }
-  #ficha section { padding:12px 18px; border-bottom:1px solid var(--borde); }
+  #ficha section { padding:12px 22px; border-bottom:1px solid var(--borde); }
   #ficha h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--verde); }
   dl { margin:0; display:grid; grid-template-columns:130px 1fr; gap:4px 10px; }
   dt { color:var(--suave); font-size:13px; }
@@ -114,13 +135,14 @@
   .puntos { white-space:nowrap; }
   .punto { display:inline-block; width:9px; height:9px; border-radius:50%; border:1.5px solid #9fb59c; margin-right:3px; vertical-align:middle; background:#fff; }
   .punto.on { background:var(--verde); border-color:var(--verde); }
-  .paso-fila { display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; padding:5px 0; border-bottom:1px dashed var(--borde); }
+  .paso-fila { display:grid; grid-template-columns:minmax(160px,1.1fr) 128px minmax(0,1fr); gap:6px 8px; align-items:center; padding:4px 0; border-bottom:1px dashed var(--borde); }
   .paso-fila:last-child { border-bottom:0; }
-  .paso-fila label { flex:1 1 190px; display:flex; gap:7px; align-items:center; cursor:pointer; }
+  .paso-fila label { display:flex; gap:7px; align-items:center; cursor:pointer; }
+  .paso-fila .bloq { color:var(--suave); font-size:12px; }
   .paso-fila.hecho label { color:var(--verde); font-weight:600; }
   #ficha .paso-fila input[type=checkbox] { width:auto; }
   #ficha .paso-fila input[type=date] { width:auto; padding:3px 6px; font-size:13px; }
-  #ficha .paso-fila .nota-paso { flex:1 1 150px; width:auto; padding:3px 6px; font-size:13px; }
+  #ficha .paso-fila .nota-paso { width:100%; padding:3px 6px; font-size:13px; }
   .seguimiento { background:var(--alerta-bg); color:var(--alerta); border-radius:8px; padding:6px 9px; margin:0 0 6px; font-size:13px; }
   .btn-peq { padding:4px 10px; font-size:13px; }
   .enviar-carta { margin:1px 0 1px 4px; padding:1px 9px; font-size:12px; white-space:nowrap; }
@@ -128,7 +150,16 @@
   #ficha section.editada { background:#f1f7ff; font-size:13px; }
   #ficha input, #ficha select, #ficha textarea { width:100%; padding:6px 8px; border:1px solid var(--borde); border-radius:6px; font:inherit; background:#fff; }
   #ficha textarea { min-height:90px; resize:vertical; }
-  .pie { position:sticky; bottom:0; background:#fff; border-top:1px solid var(--borde); padding:10px 18px; display:flex; gap:8px; }
+  .pie { position:sticky; bottom:0; background:#fff; border-top:1px solid var(--borde); padding:10px 22px; display:flex; gap:8px; }
+  /* En una pantalla angosta (o un celular) la ficha ocupa todo el ancho y vuelve a una sola columna */
+  @media (max-width:980px) { #ficha { width:100%; } #ficha .cuerpo { grid-template-columns:1fr; } .directores { grid-template-columns:1fr; } #ficha .dos-col { grid-template-columns:1fr; }
+    .paso-fila { grid-template-columns:1fr 128px; } #ficha .paso-fila .nota-paso, .paso-fila .bloq { grid-column:1 / -1; } }
+  /* Encabezados de las tablas del listado y de pagos: quedan fijos arriba al bajar por la página */
+  .tabla.tabla-lista { overflow:visible; overflow-x:clip; }
+  .tabla-lista th { z-index:1; box-shadow:0 1px 0 var(--borde); }
+  @media (max-width:940px) { .tabla.tabla-lista { overflow:auto; } }
+  /* En un celular el encabezado de la ficha no se queda fijo (ocuparía demasiado alto) */
+  @media (max-width:600px) { #ficha .cab { position:static; } }
   #login { position:fixed; inset:0; z-index:100; background:var(--fondo,#f4f6f3); display:flex; align-items:center; justify-content:center; padding:16px; }
   #login[hidden], #cambioClave[hidden], #docImagen[hidden], #docMarco[hidden] { display:none !important; }
   #cambioClave { position:fixed; inset:0; z-index:110; background:var(--fondo,#f4f6f3); display:flex; align-items:center; justify-content:center; padding:16px; }
@@ -139,7 +170,7 @@
   #cambioClave button { margin-top:14px; width:100%; }
   #cambioError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
-  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura #verDirectores, body.lectura .dir-edicion, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
+  body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura #verDirectores, body.lectura .dir-edicion, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #sigCarta, body.lectura #sigDirectorio, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
   body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
@@ -558,7 +589,7 @@
     <button class="sec btn-peq" id="limpiarSeleccion">Quitar la selección</button>
     <span class="sub">No se borra nada: las no activas pasan a la pestaña «Otras» y se pueden volver a activar desde ahí.</span>
   </div>
-  <div class="tabla"><table>
+  <div class="tabla tabla-lista"><table>
     <thead id="encabezadoTabla"><tr id="encabezadoFila">
       <th class="col-sel"><input type="checkbox" id="selTodas" aria-label="Seleccionar todas las de la lista" title="Seleccionar todas las de esta lista"></th>
     </tr></thead>
@@ -580,7 +611,7 @@
       <select id="pagosRegion"><option value="">Todas las regiones</option></select>
       <button class="sec btn-peq" id="pagosCsv" title="Descarga la lista de pagos para Excel">Descargar CSV</button>
     </div>
-    <div class="tabla"><table>
+    <div class="tabla tabla-lista"><table>
       <thead><tr><th>Nombre</th><th>RUT</th><th>Región</th><th>Etapa</th><th>Modalidad</th><th>Pagado hasta</th><th>Estado</th><th>Último pago</th><th></th></tr></thead>
       <tbody id="pagosFilas"></tbody>
     </table></div>
@@ -749,6 +780,6 @@
 <script src="app.js?v=b61f31f2"></script>
 <script src="mensaje.js?v=fee008b9"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=827fa0a0"></script>
+<script src="ui.js?v=176921ef"></script>
 </body>
 </html>

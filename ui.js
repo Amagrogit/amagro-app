@@ -340,16 +340,24 @@ let subidaDisponible = false; // ¿está configurada la página donde la postula
 let plazoRespuesta = 15; // días sin respuesta a la carta antes de avisar
 const hoyLocalISO = () => { const a = new Date(), p = n => String(n).padStart(2, '0'); return `${a.getFullYear()}-${p(a.getMonth() + 1)}-${p(a.getDate())}`; };
 
+// Grupos de los pasos de admisión (solo para ordenarlos en la ficha).
+const GRUPO_PASO = { cartaEnviada: 'Documentos', cartaFirmada: 'Documentos', carnet: 'Documentos', identidad: 'Documentos', revisada: 'Documentos', aprobada: 'Aprobación', bienvenida: 'Bienvenida y grupo', invitadaGrupo: 'Bienvenida y grupo', enGrupo: 'Bienvenida y grupo', cuota: 'Pago' };
 function bloquePasos(d) {
   const seg = d.seguimiento
     ? `<p class="seguimiento">⏰ La carta se envió hace ${d.seguimiento.dias} días y todavía no hay respuesta. Conviene hacer seguimiento.</p>` : '';
+  const esAdmin = usuarioActual && usuarioActual.rol === 'admin';
+  let grupoActual = '';
   const filas = pasosDef.map(p => {
     const e = d.pasos[p.id];
-    const bloq = p.id === 'aprobada' && !(usuarioActual && usuarioActual.rol === 'admin') ? ' disabled' : ''; // lo marca el Directorio; a mano, solo la administradora
-    return `<div class="paso-fila${e ? ' hecho' : ''}">
+    const bloq = p.id === 'aprobada' && !esAdmin ? ' disabled' : ''; // lo marca el Directorio; a mano, solo la administradora
+    const g = GRUPO_PASO[p.id] || '';
+    const titulo = g && g !== grupoActual ? `<div class="grupo-pasos">${esc(g)}</div>` : '';
+    grupoActual = g || grupoActual;
+    const pista = !e && bloq ? '<span class="bloq">Se marca sola cuando aprueban todos los directores</span>' : '';
+    return titulo + `<div class="paso-fila${e ? ' hecho' : ''}">
       <label${p.ayuda ? ` title="${esc(p.ayuda)}"` : ''}><input type="checkbox" data-paso="${p.id}"${e ? ' checked' : ''}${bloq}> ${esc(p.etiqueta)}</label>
       ${e ? `<input type="date" data-paso-fecha="${p.id}" value="${esc(e.fecha)}" max="${hoyLocalISO()}" aria-label="Fecha: ${esc(p.etiqueta)}"${bloq}>
-      <input type="text" class="nota-paso" data-paso-nota="${p.id}" value="${esc(e.nota)}" maxlength="300" placeholder="nota (opcional)" aria-label="Nota: ${esc(p.etiqueta)}"${bloq}>` : ''}
+      <input type="text" class="nota-paso" data-paso-nota="${p.id}" value="${esc(e.nota)}" maxlength="300" placeholder="nota (opcional)" aria-label="Nota: ${esc(p.etiqueta)}"${bloq}>` : pista}
     </div>`;
   }).join('');
   return `<section><h3>Pasos de admisión <span class="sub" style="text-transform:none;letter-spacing:0">${d.progreso} de ${pasosDef.length}</span></h3>${seg}${filas}</section>`;
@@ -368,6 +376,47 @@ async function guardarPaso(id, hecho, cambios = {}) {
   return r;
 }
 
+// Resumen de una línea del estado de la persona (va en el encabezado fijo de la ficha).
+function chipsEstadoFicha(d) {
+  const c = [], dir = d.directorio, f = x => esc(fechaCL(x.fecha));
+  if (d.etapa === 'Socia') {
+    if (dir && dir.estado === 'aprobada') c.push(`<span class="chip ok">Directorio ${dir.aprobaron}/${dir.total} ✔</span>`);
+    else if (d.pasos.aprobada) c.push('<span class="chip ok">Aprobada por el Directorio</span>');
+    if (d.pasos.bienvenida) c.push(`<span class="chip ok">Bienvenida enviada el ${f(d.pasos.bienvenida)}</span>`);
+    else if (d.pasos.aprobada) c.push('<span class="chip pend">Bienvenida por enviar</span>');
+    const g = estadoGrupo(d);
+    c.push(g === 'en' ? '<span class="chip ok">En el grupo de WhatsApp</span>' : g === 'invitada' ? '<span class="chip pend">Invitada al grupo</span>' : '<span class="chip">Grupo: sin invitar</span>');
+    const p = pagos ? pagoDe(d.clave) : null;
+    if (p) c.push(chipEstadoPago(p));
+  } else {
+    if (d.docs && d.docs.recibidos) c.push(d.pendienteRevision ? '<span class="chip nuevo">📎 Documentos por revisar</span>' : '<span class="chip ok">Documentos recibidos</span>');
+    if (dir && dir.estado === 'en-curso') c.push(`<span class="chip pend">Directorio ${dir.aprobaron}/${dir.total} · faltan ${dir.total - dir.aprobaron - dir.rechazaron}</span>`);
+    if (dir && dir.estado === 'detenida') c.push('<span class="chip mal">⚠ Rechazo del Directorio</span>');
+    if (dir && dir.diasHabiles != null) c.push(`<span class="chip${dir.plazoVencido ? ' mal' : ''}">Lleva ${diasTexto(dir.diasHabiles)} esperando${dir.plazoVencido ? ' · pasó el plazo' : ''}</span>`);
+  }
+  return c.join('');
+}
+// «Siguiente paso»: lo que toca hacer ahora con esta persona, con su botón.
+function siguientePaso(d) {
+  if (d.inactiva || d.duplicadaDe || d.etapa === 'Renuncia' || d.etapa === 'No califica') return '';
+  const p = d.pasos, dir = d.directorio, docs = d.docs && d.docs.recibidos;
+  const barra = (texto, boton = '', clase = '') => `<div class="siguiente${clase}"><span>${clase ? '' : '<b>Siguiente paso:</b> '}${texto}</span>${boton}</div>`;
+  if (p.aprobada) {
+    const bien = `<button class="${p.bienvenida ? 'sec ' : ''}btn-peq" id="abrirBienvenida">✉ Carta de bienvenida</button>`;
+    if (!p.bienvenida) return barra(`la aprobó todo el Directorio el ${esc(fechaCL(p.aprobada.fecha))}. Falta enviarle la carta de bienvenida.`, bien);
+    if (!p.invitadaGrupo) return barra('invitarla al grupo de WhatsApp (se anota en «Bienvenida y grupo»).', bien);
+    if (!p.enGrupo) return barra('confirmar que ya entró al grupo de WhatsApp.', bien);
+    return barra('✔ Admisión completa.', bien, ' listo');
+  }
+  if (d.etapa === 'Socia') return ''; // socias antiguas: no hay un siguiente paso de admisión
+  if (!p.cartaEnviada && !p.cartaFirmada && !docs) return barra('enviarle la carta de solicitud de ingreso.', '<button class="btn-peq" id="sigCarta">✉ Carta de solicitud</button>');
+  if (!p.cartaFirmada && !docs) return barra('esperar la carta firmada y la copia del carnet.' + (d.seguimiento ? ` Ya pasaron ${d.seguimiento.dias} días: conviene hacer seguimiento.` : ''));
+  if (!p.identidad) return barra(docs ? 'revisar los documentos recibidos y, si todo está bien, verificar la identidad (así se borra el carnet).' : 'anotar que se verificó la identidad.');
+  if (dir && dir.estado === 'detenida') return barra('un director rechazó la postulación. La administradora debe decidir (en «Validación del Directorio»).');
+  if (!dir) return barra('enviar el enlace de validación a los directores.', '<button class="btn-peq" id="sigDirectorio">✉ Enviar a los directores</button>');
+  if (dir.estado === 'en-curso') return barra(`esperando la votación del Directorio: ${dir.aprobaron} de ${dir.total} aprobaron.`, '<button class="sec btn-peq" id="sigDirectorio">✉ Reenviar a quienes faltan</button>');
+  return '';
+}
 function abrirFicha(numero, editar = false, conservarPosicion = false) {
   const d = datos.find(x => x.fila === numero);
   if (!d) return;
@@ -376,50 +425,66 @@ function abrirFicha(numero, editar = false, conservarPosicion = false) {
   editando = editar;
   const obsEditada = d.editados.includes('observaciones')
     ? `<span class="ed" title="${esc('Original en la planilla: ' + (d.originales.observaciones || '(vacío)'))}">✎</span>` : '';
+  const sec = secciones(), seccion = t => sec.find(s => s.titulo === t);
+  const dl = s => `<dl>
+      ${s.campos.map(c => filaCampo(d, c)).join('')}
+      ${s.titulo === 'Gestión' ? `<dt>Texto original</dt><dd>${dato(d.gestion)}</dd>` : ''}
+    </dl>`;
+  const estadoLinea = editando ? '' : chipsEstadoFicha(d);
+  // Cargos, comisiones y condición solo tienen sentido en una socia (o si ya tiene alguno anotado).
+  const conCargos = d.etapa === 'Socia' || d.fundadora || d.cargosDetalle.length || d.comisiones.length;
   $('ficha').innerHTML = `
     <div class="cab">
-      <div>
-        <h2>${esc(d.nombre) || '(sin nombre)'}</h2>
-        <span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.fundadora ? '<span class="chip fund">Socia fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}
-        <div class="sub">Fila ${d.fila} de la planilla · postuló el ${d.postulacion ? esc(fechaCL(d.postulacion.slice(0, 10)) + (d.postulacion.length > 10 ? ' a las ' + d.postulacion.slice(11, 16) : '')) : (esc(d.marca) || '—')}</div>
+      <div class="cab-fila">
+        <div>
+          <h2>${esc(d.nombre) || '(sin nombre)'}</h2>
+          <span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${d.fundadora ? '<span class="chip fund">Socia fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}
+          <div class="sub">Fila ${d.fila} de la planilla · postuló el ${d.postulacion ? esc(fechaCL(d.postulacion.slice(0, 10)) + (d.postulacion.length > 10 ? ' a las ' + d.postulacion.slice(11, 16) : '')) : (esc(d.marca) || '—')}</div>
+        </div>
+        <div class="cab-botones">
+          ${editando ? '' : '<button class="sec btn-peq" id="editarFicha">✎ Editar</button>'}
+          ${editando || d.inactiva ? '' : '<button class="sec btn-peq" id="alternarActiva" title="Dejar de gestionar esta postulación (pasa a la pestaña Otras, no se borra)">Marcar no activa</button>'}
+          <button class="cerrar" id="cerrarFicha" aria-label="Cerrar">×</button>
+        </div>
       </div>
-      <div class="cab-botones">
-        ${editando ? '' : '<button class="sec btn-peq" id="editarFicha">✎ Editar</button>'}
-        ${editando || d.inactiva ? '' : '<button class="sec btn-peq" id="alternarActiva" title="Dejar de gestionar esta postulación (pasa a la pestaña Otras, no se borra)">Marcar no activa</button>'}
-        <button class="cerrar" id="cerrarFicha" aria-label="Cerrar">×</button>
-      </div>
+      ${estadoLinea ? `<div class="estado-ficha"><span class="etq">Estado</span>${estadoLinea}</div>` : ''}
     </div>
     ${d.editados.length && !editando ? `<section class="editada">Esta ficha tiene ${d.editados.length} campo(s) corregido(s) en la app (marcados con ✎). La planilla de Google no se modifica.
       <button class="sec btn-peq" id="restaurarEd">Deshacer correcciones</button></section>` : ''}
-    ${d.pasos && d.pasos.aprobada && !editando ? `<section class="editada">Aprobada por el directorio${d.pasos.bienvenida ? ' · bienvenida enviada el ' + esc(fechaCL(d.pasos.bienvenida.fecha)) : ''}.
-      <button class="sec btn-peq" id="abrirBienvenida">✉ Carta de bienvenida</button></section>` : ''}
     ${d.etapa === 'No califica' && !editando ? `<section class="editada">Etapa «No califica». Si el motivo es que trabaja en el sector público, hay una carta lista para responderle.
       <button class="sec btn-peq" id="abrirNoAcep">✉ Carta: solo mujeres del ámbito privado</button></section>` : ''}
     ${d.inactiva && !editando ? `<section class="editada">Esta postulación está <b>no activa</b>: está en la pestaña «Otras» y no genera avisos. No se ha borrado nada.
       <button class="sec btn-peq" id="alternarActiva">Volver a activa</button></section>` : ''}
     ${d.duplicadaDe && !editando ? `<section class="editada">Marcada como <b>duplicada</b> de ${d.duplicadaDeInfo ? `la postulación de la fila <button class="enlace" data-ir="${d.duplicadaDeInfo.fila}">${d.duplicadaDeInfo.fila}</button> (${esc(d.duplicadaDeInfo.nombre)})` : 'otra postulación que ya no está en la planilla'}. No cuenta en el listado ni da alertas de duplicado.
       <button class="sec btn-peq" id="quitarDuplicada">Quitar la marca</button></section>` : ''}
-    ${editando ? '' : bloquePasos(d)}
+    ${editando ? '' : siguientePaso(d)}
+    <div class="cuerpo">
+      <div class="col">
     ${d.relacionadas.length ? `<section><h3>Otras postulaciones de la misma persona</h3>
       ${d.relacionadas.map(o => `<div style="margin-bottom:6px"><button class="enlace" data-ir="${o.fila}">Fila ${o.fila}</button>
         <span class="chip ${claseEtapa(o.etapa)}">${esc(o.etapa)}</span>
         <div class="sub">${esc(o.marca) || 'sin fecha'} · ${esc(o.nombre)}</div></div>`).join('')}
     </section>` : ''}
-    ${editando ? '' : bloqueCargos(d)}
-    ${editando ? '' : bloqueComisiones(d)}
-    ${secciones().map(s => `<section><h3>${s.titulo}</h3><dl>
-      ${s.campos.map(c => filaCampo(d, c)).join('')}
-      ${s.titulo === 'Gestión' ? `<dt>Texto original</dt><dd>${dato(d.gestion)}</dd>` : ''}
-    </dl></section>`).join('')}
-    <section><h3>Motivación para postular</h3>${d.motivacion ? `<div class="texto">${esc(d.motivacion)}</div>` : NADA}</section>
-    <section><h3>Observaciones ${obsEditada}</h3>${editando
-      ? `<textarea data-campo="observaciones" data-ini="${esc(d.observaciones)}">${esc(d.observaciones)}</textarea>`
-      : (d.observaciones ? `<div class="texto">${esc(d.observaciones)}</div>` : NADA)}</section>
-    ${editando ? '' : bloqueCarta(d)}
-    ${editando ? '' : bloqueDirectorio(d)}
-    ${editando ? '' : '<section><h3>Historial de cambios</h3><button class="sec" id="verHistFicha" type="button">Ver historial</button><div id="histFicha" class="sub" hidden></div></section>'}
-    <section><h3>Alertas de calidad de datos</h3>${d.alertas.length ? d.alertas.map(a => `<span class="chip mal">${esc(a)}</span>`).join('') : '<span class="chip ok">Sin alertas</span>'}
-      ${editando ? '' : bloqueMensaje(d)}</section>
+        <section><h3>Contacto</h3>${dl(seccion('Contacto'))}</section>
+        <section><h3>Perfil</h3>${dl(seccion('Perfil'))}</section>
+        <section><h3>Gestión, pagos y asamblea</h3><div class="dos-col">${['Gestión', 'Pagos', 'Asamblea'].map(t => dl(seccion(t))).join('')}</div></section>
+        ${editando ? '' : `<section><h3>Alertas de calidad de datos</h3>${d.alertas.length ? d.alertas.map(a => `<span class="chip mal">${esc(a)}</span>`).join('') : '<span class="chip ok">Sin alertas</span>'}
+          ${bloqueMensaje(d)}</section>`}
+      </div>
+      <div class="col">
+        <section><h3>Motivación para postular</h3>${d.motivacion ? `<div class="texto">${esc(d.motivacion)}</div>` : NADA}</section>
+        <section><h3>Observaciones ${obsEditada}</h3>${editando
+          ? `<textarea data-campo="observaciones" data-ini="${esc(d.observaciones)}">${esc(d.observaciones)}</textarea>`
+          : (d.observaciones ? `<div class="texto">${esc(d.observaciones)}</div>` : NADA)}</section>
+        ${editando ? '' : bloquePasos(d)}
+        ${editando ? '' : bloqueDirectorio(d)}
+        ${editando ? '' : bloqueCarta(d)}
+        ${editando || !conCargos ? '' : bloqueCargos(d)}
+        ${editando || !conCargos ? '' : bloqueComisiones(d)}
+        ${editando ? '' : '<section><h3>Historial de cambios</h3><button class="sec" id="verHistFicha" type="button">Ver historial</button><div id="histFicha" class="sub" hidden></div></section>'}
+        ${editando ? '' : ''}
+      </div>
+    </div>
     ${editando ? '<div class="pie"><button id="guardarEd">Guardar cambios</button><button class="sec" id="cancelarEd">Cancelar</button></div>' : ''}`;
   $('ficha').classList.add('abierta');
   $('ficha').setAttribute('aria-hidden', 'false');
@@ -1223,6 +1288,8 @@ $('ficha').addEventListener('click', e => {
   if (on('restaurarEd')) return deshacerEdiciones();
   if (on('quitarDuplicada')) return quitarMarcaDuplicada();
   if (on('abrirNoAcep')) return abrirModalNoAcep();
+  if (on('sigCarta')) return abrirModalCarta();
+  if (on('sigDirectorio')) return abrirModalDirectorio(fichaActual());
   if (on('abrirBienvenida')) return abrirModalBienvenida();
   if (on('alternarActiva')) { const d = datos.find(x => x.fila === seleccion); return d && cambiarActivas([d.clave], !!d.inactiva); }
   if (on('prepararMensaje')) return abrirModalMensaje();
@@ -1720,6 +1787,13 @@ function filasDirectores(r) {
     return `<div class="hist-fila"><b>${esc(x.nombre)}</b>${x.cargo ? ' <span class="sub">(' + esc(x.cargo) + ')</span>' : ''} · <span class="chip ${clase}">${texto}</span>${detalle}${x.motivo ? '<br><i>«' + esc(x.motivo) + '»</i>' : ''}</div>`;
   }).join('');
 }
+function tarjetasDirectores(r) {
+  return '<div class="directores">' + r.lista.map(x => {
+    const [clase, texto] = ESTADO_DIRECTOR[x.estado];
+    const detalle = x.fecha ? ' <span class="sub">' + esc(fechaHoraCL(x.fecha)) + '</span>' : x.estado === 'pendiente' && x.vence ? ' <span class="sub">vence el ' + esc(fechaCL(String(x.vence).slice(0, 10))) + '</span>' : '';
+    return `<div class="director"><b>${esc(x.nombre)}</b>${x.cargo ? '<i>' + esc(x.cargo) + '</i> · ' : ''}<span class="chip ${clase}">${texto}</span>${detalle}${x.motivo ? '<div class="motivo">«' + esc(x.motivo) + '»</div>' : ''}</div>`;
+  }).join('') + '</div>';
+}
 function pintarDirectorio({ resumen: r, paginaSubida, puedeDecidir, plazoDiasHabiles }) {
   const titulo = {
     'sin-enlaces': 'Todavía no se les envían los enlaces a los directores.',
@@ -1736,7 +1810,7 @@ function pintarDirectorio({ resumen: r, paginaSubida, puedeDecidir, plazoDiasHab
         <button class="btn-peq" data-dir-decidir="reabrir" title="El rechazo deja de contar (queda en el historial) y ese director recibe un enlace nuevo para votar otra vez">Reabrir la votación</button>
         <button class="sec btn-peq" data-dir-decidir="rechazar" title="La postulación pasa a la etapa «No califica»">Rechazar definitivamente</button></div>`
     : '<p class="sub" style="margin:6px 0 0">La administradora debe decidir qué hacer: reabrir la votación o rechazar la postulación.</p>';
-  return `<p style="margin:0 0 6px"><b>${esc(titulo)}</b></p>${plazo}${filasDirectores(r)}${enviar}${decidir}`;
+  return `<p style="margin:0 0 6px"><b>${esc(titulo)}</b></p>${plazo}${tarjetasDirectores(r)}${enviar}${decidir}`;
 }
 
 // Pantalla de envío: un correo por director, con su enlace personal, listo en Gmail (la persona lo revisa y pulsa Enviar).
