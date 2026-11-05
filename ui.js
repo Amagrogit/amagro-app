@@ -153,6 +153,10 @@ function celdasInicio(d) {
 }
 // Aprobada por el Directorio (ya es socia) y todavía sin la carta de bienvenida.
 const bienvenidaPendiente = d => !!(d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe);
+// Identidad verificada y todavía sin enlaces para el Directorio (falta enviarlos).
+const porEnviarDirectorio = d => !d.inactiva && !d.duplicadaDe && !['Socia', 'Renuncia', 'No califica'].includes(d.etapa) && !!d.pasos.identidad && !d.directorio;
+// Un director la rechazó: queda detenida hasta que la administradora decida.
+const rechazadaPorDirectorio = d => !d.inactiva && !d.duplicadaDe && !!d.directorio && d.directorio.estado === 'detenida';
 function filaSocia(d) {
   const p = pagoDe(d.clave);
   const cargos = d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('');
@@ -224,7 +228,7 @@ function pintar() {
     (!fg || estadoGrupo(d) === fg) &&
     (!fb || bienvenidaPendiente(d)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
-    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
     (!fcom || (fcom === '*' ? d.comisiones.length > 0 : fcom === 'coord' ? d.comisiones.some(c => c.rol === 'coordinadora') : d.comisiones.some(c => c.id === fcom))) &&
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
@@ -257,7 +261,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${porEnviarDirectorio(d) ? '<span class="chip nuevo" title="Identidad verificada: falta enviarle la validación del Directorio">Falta enviar al Directorio</span><button class="btn-peq enviar-carta" data-enviar-directorio="' + d.fila + '" title="Prepara los correos para los directores sin abrir la ficha">✉ Enviar a los directores</button>' : ''}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
@@ -1266,13 +1270,14 @@ $('aplicarDuplicados').addEventListener('click', async () => {
 });
 
 $('filas').addEventListener('click', e => {
-  const desdeLista = e.target.closest('[data-enviar-carta], [data-enviar-bienvenida], [data-pedir-datos]');
+  const desdeLista = e.target.closest('[data-enviar-carta], [data-enviar-bienvenida], [data-pedir-datos], [data-enviar-directorio]');
   if (desdeLista) {
     if (!puedeSalir()) return;
     editando = false;
     const ds = desdeLista.dataset;
     if (ds.enviarCarta) abrirModalCarta(Number(ds.enviarCarta));
     else if (ds.enviarBienvenida) abrirModalBienvenida(Number(ds.enviarBienvenida));
+    else if (ds.enviarDirectorio) abrirModalDirectorio(datos.find(x => x.fila === Number(ds.enviarDirectorio)));
     else abrirModalMensaje(Number(ds.pedirDatos));
     pintar();
     return;
@@ -2019,10 +2024,10 @@ $('sociasResultado').addEventListener('click', async e => {
 // ---- Avisos de novedades (documentos y correcciones por revisar) ----
 // Cada aviso azul se puede cerrar con la ✕ y no vuelve a salir hasta que se entre de nuevo o se actualice la pantalla principal
 // (↻ Actualizar o recargar la página). Las consultas automáticas de cada minuto no lo vuelven a abrir.
-const avisoCerrado = { docs: false, correcciones: false, bienvenidas: false };
+const avisoCerrado = { docs: false, correcciones: false, bienvenidas: false, directorio: false, rechazos: false };
 let ultimoDocs = 0, ultimoCorrecciones = 0;
 function reabrirAvisos() {
-  avisoCerrado.docs = avisoCerrado.correcciones = avisoCerrado.bienvenidas = false;
+  avisoCerrado.docs = avisoCerrado.correcciones = avisoCerrado.bienvenidas = avisoCerrado.directorio = avisoCerrado.rechazos = false;
   actualizarAvisoBienvenidas();
   actualizarAvisoDocs(ultimoDocs);
   actualizarAvisoCorrecciones(ultimoCorrecciones);
@@ -2033,7 +2038,24 @@ function actualizarAvisoBienvenidas() {
   const n = datos.filter(bienvenidaPendiente).length;
   $('avisoBienvenidas').hidden = !n || avisoCerrado.bienvenidas;
   $('avisoBienvenidasTexto').textContent = n === 1 ? '1 socia aprobada por el Directorio espera su carta de bienvenida.' : n + ' socias aprobadas por el Directorio esperan su carta de bienvenida.';
+  // Validación del Directorio: las que faltan enviar a los directores y las detenidas por un rechazo.
+  const e = datos.filter(porEnviarDirectorio).length, r = datos.filter(rechazadaPorDirectorio).length;
+  $('avisoDirectorio').hidden = !e || avisoCerrado.directorio;
+  $('avisoDirectorioTexto').textContent = e === 1 ? '1 postulante con la identidad verificada espera que se le envíe la validación del Directorio.' : e + ' postulantes con la identidad verificada esperan que se les envíe la validación del Directorio.';
+  $('avisoRechazos').hidden = !r || avisoCerrado.rechazos;
+  $('avisoRechazosTexto').textContent = r === 1 ? '⚠ 1 postulación detenida: un director la rechazó. La administradora debe decidir qué hacer.' : '⚠ ' + r + ' postulaciones detenidas: un director las rechazó. La administradora debe decidir qué hacer.';
 }
+function verEnPostulantes(filtro) {
+  if (!puedeSalir()) return;
+  cerrarFicha();
+  cambiarPestana('postulantes');
+  $('etapa').value = ''; $('filtro').value = filtro;
+  pintar();
+}
+$('cerrarAvisoDirectorio').addEventListener('click', () => { avisoCerrado.directorio = true; $('avisoDirectorio').hidden = true; });
+$('cerrarAvisoRechazos').addEventListener('click', () => { avisoCerrado.rechazos = true; $('avisoRechazos').hidden = true; });
+$('verPorDirectorio').addEventListener('click', () => verEnPostulantes('aldirectorio'));
+$('verRechazos').addEventListener('click', () => verEnPostulantes('rechazodir'));
 $('cerrarAvisoBienvenidas').addEventListener('click', () => { avisoCerrado.bienvenidas = true; $('avisoBienvenidas').hidden = true; });
 $('verBienvenidas').addEventListener('click', () => {
   if (!puedeSalir()) return;

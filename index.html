@@ -172,7 +172,7 @@
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
   body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura #verDirectores, body.lectura .dir-edicion, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #sigCarta, body.lectura #sigDirectorio, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
-  body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoBienvenidas, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
+  body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoBienvenidas, body.lectura #avisoDirectorio, body.lectura #avisoRechazos, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
   .cerrar-panel { position:absolute; top:8px; right:10px; z-index:5; background:#fff; color:var(--suave); border:1px solid var(--borde); border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; }
   .cerrar-panel:hover { color:var(--texto); border-color:var(--suave); }
@@ -302,6 +302,16 @@
     <button class="btn-peq" id="verBienvenidas" style="margin-left:8px">Ver quiénes</button>
     <button class="cerrar-aviso" id="cerrarAvisoBienvenidas" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
   </div>
+  <div id="avisoDirectorio" class="aviso aviso-docs" role="status" hidden>
+    <b id="avisoDirectorioTexto"></b>
+    <button class="btn-peq" id="verPorDirectorio" style="margin-left:8px">Ver quiénes</button>
+    <button class="cerrar-aviso" id="cerrarAvisoDirectorio" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
+  </div>
+  <div id="avisoRechazos" class="aviso aviso-docs" role="status" hidden>
+    <b id="avisoRechazosTexto"></b>
+    <button class="btn-peq" id="verRechazos" style="margin-left:8px">Ver quiénes</button>
+    <button class="cerrar-aviso" id="cerrarAvisoRechazos" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
+  </div>
   <div id="avisoCorrecciones" class="aviso aviso-docs" role="status" hidden>
     <b id="avisoCorreccionesTexto"></b>
     <button class="btn-peq" id="verCorrecciones" style="margin-left:8px">Revisar</button>
@@ -396,7 +406,7 @@
       <h2>2. Qué verás</h2>
       <ul>
         <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
-        <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión», «socias aprobadas por el Directorio esperan su carta de bienvenida» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas y una ✕ para cerrarlo; vuelve a salir al entrar o al actualizar.</li>
+        <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión», «postulantes con la identidad verificada esperan que se les envíe la validación del Directorio», «postulaciones detenidas por el rechazo de un director», «socias aprobadas por el Directorio esperan su carta de bienvenida» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas y una ✕ para cerrarlo; vuelve a salir al entrar o al actualizar.</li>
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Pasan a la pestaña <b>Otras</b> y salen de los avisos, <b>no se borra nada</b>, y desde ahí se pueden <b>volver a activar</b> (filtro «No activas · postulaciones antiguas»).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
         <li><b>Validación del Directorio:</b> al verificar la identidad y borrar el carnet, se abre sola la pantalla para enviar a cada director su enlace personal (se abre en Gmail y tú envías). Cada director ve los datos de la postulante y su carta firmada, y aprueba o rechaza. Cuando aprueban <b>todos</b>, pasa sola a <b>Socia</b> (aunque aún no pague la primera cuota). Si uno rechaza, queda detenida y la administradora decide: reabrir la votación o rechazarla.</li>
@@ -576,6 +586,8 @@
       <option value="duplicadas">Solo personas con más de una postulación</option>
       <option value="sinrespuesta">Carta enviada sin respuesta (seguimiento)</option>
       <option value="porrevisar">Documentos recibidos por revisar</option>
+      <option value="aldirectorio">Por enviar al Directorio (identidad verificada)</option>
+      <option value="rechazodir">Detenidas por el rechazo de un director</option>
       <option value="marcadas">Marcadas como duplicadas</option>
     </select>
     <select id="filtroCargo" title="Filtrar por cargo o por condición de socia fundadora"><option value="">Cargos: todos</option></select>
@@ -785,6 +797,6 @@
 <script src="app.js?v=b61f31f2"></script>
 <script src="mensaje.js?v=fee008b9"></script>
 <script src="sugerencias.js?v=d087c477"></script>
-<script src="ui.js?v=87cfe988"></script>
+<script src="ui.js?v=84c35771"></script>
 </body>
 </html>
