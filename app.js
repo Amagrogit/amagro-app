@@ -1971,11 +1971,18 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
     // Marca o desmarca un paso de admisión de una postulante, con su fecha y una nota opcional.
     if (ruta === 'POST /api/paso') {
       const c = JSON.parse(cuerpo);
-      if (!(await buscarRegistro(c.clave))) return fallo(404, NO_ENCONTRADA);
+      const registro = await buscarRegistro(c.clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
       const v = validarPaso(c);
       if (v.error) return fallo(400, v.error);
       if (v.id === 'aprobada' && !sesion.esAdmin()) return fallo(403, 'Este paso lo marca el Directorio cuando todos los directores aprueban. Solo la administradora puede cambiarlo a mano.');
       await almacen.marcarPaso(c.clave, v.id, v.hecho, v.entrada);
+      // Verificar la identidad es terminar la revisión de los documentos: se marca también «Revisada por secretaría»
+      // (si ya estaba marcada con una fecha anterior a hoy se actualiza, para que el aviso de «por revisar» se apague).
+      if (v.id === 'identidad' && v.hecho) {
+        const r = registro.pasos && registro.pasos.revisada;
+        if (!r || r.fecha < v.entrada.fecha) await almacen.marcarPaso(c.clave, 'revisada', true, { fecha: v.entrada.fecha, nota: 'Al verificar la identidad' });
+      }
       return ok(await datosActuales());
     }
 
