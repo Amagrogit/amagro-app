@@ -151,6 +151,10 @@ function celdasInicio(d) {
   return `<td class="col-sel"><input type="checkbox" data-sel="${esc(d.clave)}" aria-label="Seleccionar a ${esc(d.nombre)}"${seleccionadas.has(d.clave) ? ' checked' : ''}></td>
       <td><button class="enlace corto-b" data-fila="${d.fila}" title="${esc(d.nombre)}">${esc(d.nombre) || '(sin nombre)'}</button>${d.editados.length ? '<span class="ed" title="Editada en la app">✎</span>' : ''}${d.inactiva ? ' <span class="chip" title="La administración dejó de gestionar esta postulación">No activa</span>' : ''}${d.pendienteRevision ? ' <span class="chip nuevo" title="Envió documentos: falta revisarlos">📎 por revisar</span>' : ''}${bienvenidaPendiente(d) ? '<br><span class="chip nuevo" title="La aprobó todo el Directorio y ya es socia. Falta enviarle la carta de bienvenida">Aprobada por el Directorio</span>' + (d.correo ? `<button class="btn-peq enviar-carta" data-enviar-bienvenida="${d.fila}" title="Prepara la carta de bienvenida y el correo sin abrir la ficha">✉ Enviar bienvenida</button>` : '') : ''}${d.relacionadas.length ? `<br><span class="chip" title="Otras filas: ${esc(d.relacionadas.map(o => o.fila).join(', '))}">⧉ ${d.relacionadas.length + 1} postulaciones</span>` : ''}</td>`;
 }
+// Estado del enlace de subida de documentos que se le creó a la postulante.
+const chipEnlace = e => e.estado === 'sin-abrir' ? '<span class="chip pend" title="Se creó el enlace pero nadie lo ha abierto todavía">Enlace sin abrir</span>'
+  : e.estado === 'abierto' ? `<span class="chip" title="Abrió el enlace el ${esc(fechaHoraCL(e.visto))} (${e.visitas} ${e.visitas === 1 ? 'vez' : 'veces'}) y todavía no sube sus documentos">Abrió el enlace · sin subir</span>`
+  : e.estado === 'vencido' ? '<span class="chip mal" title="El enlace venció sin que subiera documentos: hay que crear uno nuevo">Enlace vencido</span>' : '';
 // Aprobada por el Directorio (ya es socia) y todavía sin la carta de bienvenida.
 const bienvenidaPendiente = d => !!(d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe);
 // Identidad verificada y todavía sin enlaces para el Directorio (falta enviarlos).
@@ -228,7 +232,7 @@ function pintar() {
     (!fg || estadoGrupo(d) === fg) &&
     (!fb || bienvenidaPendiente(d)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
-    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'enlacesinabrir' ? !!d.enlace && !d.inactiva && !(d.docs && d.docs.recibidos) && ['sin-abrir', 'abierto', 'vencido'].includes(d.enlace.estado) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
     (!fcom || (fcom === '*' ? d.comisiones.length > 0 : fcom === 'coord' ? d.comisiones.some(c => c.rol === 'coordinadora') : d.comisiones.some(c => c.id === fcom))) &&
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
@@ -395,6 +399,7 @@ function chipsEstadoFicha(d) {
     if (p) c.push(chipEstadoPago(p));
   } else {
     if (d.docs && d.docs.recibidos) c.push(d.pendienteRevision ? '<span class="chip nuevo">📎 Documentos por revisar</span>' : '<span class="chip ok">Documentos recibidos</span>');
+    else if (d.enlace && !d.inactiva) c.push(chipEnlace(d.enlace));
     if (dir && dir.estado === 'en-curso') c.push(`<span class="chip pend">Directorio ${dir.aprobaron}/${dir.total} · faltan ${dir.total - dir.aprobaron - dir.rechazaron}</span>`);
     if (dir && dir.estado === 'detenida') c.push('<span class="chip mal">⚠ Rechazo del Directorio</span>');
     if (dir && dir.diasHabiles != null) c.push(`<span class="chip${dir.plazoVencido ? ' mal' : ''}">Lleva ${diasTexto(dir.diasHabiles)} esperando${dir.plazoVencido ? ' · pasó el plazo' : ''}</span>`);
@@ -1705,7 +1710,9 @@ function pintarDocumentos(d, { documentos, paginaSubida }) {
       <button class="sec btn-peq" id="copiarMensajeEnlace">Copiar mensaje con el enlace</button></div>` : '';
   const crear = paginaSubida ? '' : '<p class="sub">Falta configurar la dirección de la página de subida para poder crear enlaces.</p>';
   const pista = d.pendienteRevision ? '<p class="seguimiento" style="background:#e8f1fb;color:#0b57a4">📎 Estos documentos esperan revisión. Cuando los revises, marca el paso «Revisada por secretaría».</p>' : '';
-  return pista + (filas || '<p class="sub" style="margin:0 0 8px">Todavía no ha subido documentos.</p>') + crear + caja;
+  const e = d.enlace;
+  const estadoEnl = !e ? '' : `<p class="sub" style="margin:0 0 8px">Enlace creado el ${esc(fechaHoraCL(e.creado))}: ${e.estado === 'subido' ? 'ya lo usó para subir sus documentos.' : e.estado === 'vencido' ? '<b>venció</b> sin que subiera nada; crea uno nuevo.' : e.estado === 'abierto' ? `lo abrió el ${esc(fechaHoraCL(e.visto))} (${e.visitas} ${e.visitas === 1 ? 'vez' : 'veces'}), pero todavía no sube sus documentos.` : '<b>todavía no lo ha abierto</b>.'}</p>`;
+  return pista + estadoEnl + (filas || '<p class="sub" style="margin:0 0 8px">Todavía no ha subido documentos.</p>') + crear + caja;
 }
 
 // Descarga el documento con la sesión de la persona y lo muestra aquí mismo, en una ventana de la página

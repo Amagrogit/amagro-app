@@ -1478,6 +1478,18 @@ class Almacen {
     return res;
   }
 
+  // El último enlace de documentos de cada postulante: { [clave]: { creado_en, vence_en, usado_en, visto_en, ultima_visita, visitas } }.
+  // Sirve para saber quién ya abrió el enlace y quién no. La directiva (sin permiso) recibe una lista vacía.
+  async resumenEnlaces() {
+    const res = {};
+    for (let desde = 0; ; desde += PAGINA) {
+      const { datos } = await this.sesion.pedir('GET', `enlaces_subida?select=clave,creado_en,vence_en,usado_en,visto_en,ultima_visita,visitas&tipo=eq.documentos&order=creado_en.asc&limit=${PAGINA}&offset=${desde}`);
+      for (const e of datos || []) res[e.clave] = e; // vienen de más antiguo a más nuevo: queda el último
+      if (!datos || datos.length < PAGINA) break;
+    }
+    return res;
+  }
+
   // Borra la copia del carnet (lo hace una función del servidor, que revisa el rol).
   borrarCarnet(id) { return this.sesion.funcion('documentos', { accion: 'borrar_carnet', id }); }
 
@@ -1755,6 +1767,13 @@ function pendienteDeRevision(docs, pasos) {
   return !rev || docs.ultimo.slice(0, 10) > rev.fecha;
 }
 
+// Estado del último enlace de documentos: 'subido' (ya usó el enlace), 'vencido', 'abierto' (lo abrió pero no subió) o 'sin-abrir'.
+function estadoEnlace(e, ahora = Date.now()) {
+  if (!e) return null;
+  const estado = e.usado_en ? 'subido' : Date.parse(e.vence_en) <= ahora ? 'vencido' : e.visto_en ? 'abierto' : 'sin-abrir';
+  return { estado, creado: e.creado_en, vence: e.vence_en, visto: e.visto_en || null, ultima: e.ultima_visita || null, visitas: e.visitas || 0 };
+}
+
 const largoUtf8 = s => new TextEncoder().encode(s).length;
 const ok = json => ({ estado: 200, json });
 const fallo = (estado, error, extra = {}) => ({ estado, json: { error, ...extra } });
@@ -1788,8 +1807,8 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
   }
 
   async function respuestaDatos(o) {
-    const [ediciones, documentos, catalogo, directores, votos] = await Promise.all([almacen.leerEdiciones(), almacen.resumenDocumentos(), almacen.comisiones(),
-      almacen.directores().catch(() => []), almacen.votosDirectorioTodos().catch(() => [])]); // sin las tablas del Directorio (falta ejecutar el esquema) la app sigue funcionando
+    const [ediciones, documentos, catalogo, directores, votos, enlaces] = await Promise.all([almacen.leerEdiciones(), almacen.resumenDocumentos(), almacen.comisiones(),
+      almacen.directores().catch(() => []), almacen.votosDirectorioTodos().catch(() => []), almacen.resumenEnlaces().catch(() => ({}))]); // sin las tablas del Directorio (falta ejecutar el esquema) la app sigue funcionando
     const r = procesarCSV(o.texto, new Date(), soloCampos(ediciones), soloPasos(ediciones));
     const porId = new Map(catalogo.map(c => [c.id, c]));
     const votosDe = new Map();
@@ -1800,6 +1819,7 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       const docs = documentos[reg.clave] || null;
       reg.docs = docs;
       reg.pendienteRevision = !reg.inactiva && pendienteDeRevision(docs, reg.pasos); // lo no activo no genera avisos
+      reg.enlace = estadoEnlace(enlaces[reg.clave]);
       const vs = votosDe.get(reg.clave);
       const dr = vs ? DIR.resumenVotos(directores, vs) : null;
       reg.directorio = dr && dr.estado !== 'sin-enlaces' ? { estado: dr.estado, aprobaron: dr.aprobaron, rechazaron: dr.rechazaron, total: dr.total, diasHabiles: dr.diasHabiles, plazoVencido: dr.plazoVencido } : null;
