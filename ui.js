@@ -256,6 +256,8 @@ function pintar() {
     b.querySelector('span').textContent = b.dataset.orden === orden.campo && orden.dir ? (orden.dir === 1 ? '▲' : '▼') : '';
   });
   $('resumen').innerHTML = resumenPestana(vis);
+  $('exportarExcel').textContent = '⬇ Descargar Excel (' + vis.length + ')';
+  $('exportarExcel').disabled = !vis.length;
   $('filas').innerHTML = vis.length ? vis.map(d => pestana === 'socias' ? filaSocia(d) : pestana === 'otras' ? filaOtra(d) : `
     <tr class="${d.fila === seleccion ? 'sel' : ''}${d.inactiva ? ' inactiva' : ''}">
       ${celdasInicio(d)}
@@ -272,6 +274,57 @@ function pintar() {
     </tr>`).join('') : '<tr><td colspan="' + (pestana === 'postulantes' ? 10 : pestana === 'socias' ? 9 : 8) + '" class="vacio">Sin resultados</td></tr>';
   actualizarSeleccion(vis);
 }
+
+// ---- Descargar en Excel lo que está filtrado en pantalla ----
+const TEXTO_ENLACE = { 'sin-abrir': 'Sin abrir', abierto: 'Abrió el enlace, sin subir', vencido: 'Vencido', subido: 'Subió documentos' };
+function textoDirectorio(d) {
+  const r = d.directorio;
+  if (!r) return '';
+  return r.estado === 'aprobada' ? `Aprobada (${r.aprobaron}/${r.total})` : r.estado === 'detenida' ? `Rechazada (${r.rechazaron} rechazo)` : `En curso (${r.aprobaron}/${r.total} aprobaron)`;
+}
+// Columnas de cada pestaña: la misma información que se ve en pantalla, más el contacto, para trabajar en Excel.
+const COLUMNAS_EXCEL = {
+  postulantes: [
+    ['Nombre', 30, d => d.nombre], ['Fecha de postulación', 16, d => fechaCL((d.postulacion || '').slice(0, 10))], ['RUT', 13, d => d.rut],
+    ['Correo', 30, d => d.correo], ['Teléfono', 14, d => d.telefono], ['Empresa', 28, d => d.empresa], ['Región', 22, d => d.region], ['Comuna', 18, d => d.comuna],
+    ['Etapa', 18, d => d.etapa], ['Pasos hechos', 12, d => d.progreso + ' de ' + pasosDef.length],
+    ['Pasos pendientes', 40, d => pasosDef.filter(p => !d.pasos[p.id]).map(p => p.etiqueta).join(', ')],
+    ['Documentos', 16, d => (d.docs && d.docs.recibidos ? (d.pendienteRevision ? 'Por revisar' : 'Recibidos') : '')],
+    ['Enlace de documentos', 24, d => (d.enlace && !(d.docs && d.docs.recibidos) ? TEXTO_ENLACE[d.enlace.estado] || '' : '')],
+    ['Directorio', 24, textoDirectorio], ['Alertas', 50, d => d.alertas.join(' · ')],
+  ],
+  socias: [
+    ['Nombre', 30, d => d.nombre], ['N° de inscripción', 14, d => d.inscripcion], ['RUT', 13, d => d.rut], ['Correo', 30, d => d.correo], ['Teléfono', 14, d => d.telefono],
+    ['Empresa', 28, d => d.empresa], ['Región', 22, d => d.region], ['Comuna', 18, d => d.comuna], ['Fundadora', 11, d => (d.fundadora ? 'Sí' : '')],
+    ['Cargos', 30, d => d.cargos.join(', ')], ['Comisiones', 34, d => d.comisiones.map(c => c.nombre + (c.rol === 'coordinadora' ? ' (coordinadora)' : '')).join(', ')],
+    ['Grupo WhatsApp', 16, d => ({ en: 'En el grupo', invitada: 'Invitada', sin: 'Sin invitar' })[estadoGrupo(d)]],
+    ['Carta de bienvenida', 20, d => (d.pasos.bienvenida ? 'Enviada el ' + fechaCL(d.pasos.bienvenida.fecha) : d.pasos.aprobada ? 'Por enviar' : '')],
+    ['Estado de pago', 16, d => { const p = pagoDe(d.clave); return p ? ({ 'al-dia': 'Al día', pendiente: 'Pendiente', atrasada: 'Atrasada' })[p.estado] || p.estado : ''; }],
+    ['Pagado hasta', 14, d => { const p = pagoDe(d.clave); return p && p.pagadoHasta ? nombreMes(p.pagadoHasta) : ''; }],
+  ],
+  otras: [
+    ['Nombre', 30, d => d.nombre], ['Fecha de postulación', 16, d => fechaCL((d.postulacion || '').slice(0, 10))], ['RUT', 13, d => d.rut], ['Correo', 30, d => d.correo], ['Teléfono', 14, d => d.telefono],
+    ['Empresa', 28, d => d.empresa], ['Región', 22, d => d.region], ['Comuna', 18, d => d.comuna], ['Etapa', 16, d => (d.inactiva && !['Renuncia', 'No califica'].includes(d.etapa) ? 'No activa' : d.etapa)],
+    ['Observaciones', 50, d => d.observaciones],
+  ],
+};
+function descargarExcel() {
+  const lista = visiblesActuales();
+  if (!lista.length) return mostrar('No hay nadie en la lista para descargar.', true);
+  const cols = COLUMNAS_EXCEL[pestana];
+  const bytes = Planilla.crearXlsx({
+    hoja: { postulantes: 'Postulantes', socias: 'Socias', otras: 'Otras' }[pestana],
+    columnas: cols.map(([titulo, ancho]) => ({ titulo, ancho })),
+    filas: lista.map(d => cols.map(([, , valor]) => { const v = valor(d); return v === undefined || v === null ? '' : v; })),
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = 'amagro_' + pestana + '_' + hoyLocalISO() + '.xlsx';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  mostrar('Planilla descargada: ' + lista.length + (lista.length === 1 ? ' fila' : ' filas') + ' (lo que se ve en la lista).');
+}
+$('exportarExcel').addEventListener('click', descargarExcel);
 
 // ---- Ficha ----
 const NADA = '<span class="nada">—</span>';

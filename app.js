@@ -1764,7 +1764,9 @@ const soloPasos = ed => Object.fromEntries(Object.entries(ed).filter(([, v]) => 
 function pendienteDeRevision(docs, pasos) {
   if (!docs || !docs.recibidos) return false;
   const rev = pasos && pasos.revisada;
-  return !rev || docs.ultimo.slice(0, 10) > rev.fecha;
+  // La fecha del paso es la de hoy en Chile; lo recibido viene con hora UTC. Se pasa a fecha local antes de comparar:
+  // si no, algo recibido a las 22:00 (ya es «mañana» en UTC) seguiría «por revisar» aunque se revisara esa misma noche.
+  return !rev || hoyISO(new Date(docs.ultimo)) > rev.fecha;
 }
 
 // Estado del último enlace de documentos: 'subido' (ya usó el enlace), 'vencido', 'abierto' (lo abrió pero no subió) o 'sin-abrir'.
