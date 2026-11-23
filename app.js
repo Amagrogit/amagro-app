@@ -1820,6 +1820,12 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       reg.comisiones = reg.comisionesAsignadas.filter(a => porId.has(a.id)).map(a => ({ ...porId.get(a.id), rol: a.rol }));
       const docs = documentos[reg.clave] || null;
       reg.docs = docs;
+      // Si ya mandó documentos, respondió: no corre el aviso de «sin respuesta» y, salvo que alguien haya fijado la etapa a mano,
+      // pasa a «Con documentos» sin esperar a que se marquen los pasos.
+      if (docs && docs.recibidos && !reg.inactiva) {
+        reg.seguimiento = null;
+        if (['Pendiente de carta', 'Sin gestión'].includes(reg.etapa) && !(reg.editados || []).includes('etapa')) reg.etapa = 'Con documentos';
+      }
       reg.pendienteRevision = !reg.inactiva && pendienteDeRevision(docs, reg.pasos); // lo no activo no genera avisos
       reg.enlace = estadoEnlace(enlaces[reg.clave]);
       const vs = votosDe.get(reg.clave);
