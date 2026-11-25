@@ -172,7 +172,7 @@
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
   body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura #verDirectores, body.lectura .dir-edicion, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #sigCarta, body.lectura #sigDirectorio, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
-  body.lectura [data-borrar-carnet], body.lectura #avisoDocs, body.lectura #avisoBienvenidas, body.lectura #avisoNuevas, body.lectura #avisoDirectorio, body.lectura #avisoRechazos, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
+  body.lectura [data-borrar-carnet], body.lectura #pendientes, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
   .cerrar-panel { position:absolute; top:8px; right:10px; z-index:5; background:#fff; color:var(--suave); border:1px solid var(--borde); border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; }
   .cerrar-panel:hover { color:var(--texto); border-color:var(--suave); }
@@ -194,6 +194,17 @@
   #loginError { color:var(--alerta); font-size:13px; margin-top:10px; min-height:1em; }
   #usuario { font-size:13px; color:var(--suave); }
   .aviso-docs { background:#e8f1fb; border-color:#9ec3ea; }
+  .pendientes { background:#e8f1fb; border:1px solid #9ec3ea; border-radius:8px; margin-bottom:12px; }
+  .pendientes[hidden] { display:none; }
+  #pendientesCab.pend-cab { display:flex; width:100%; align-items:center; gap:10px; flex-wrap:wrap; background:transparent; color:var(--texto); border:0; box-shadow:none; padding:10px 14px; font:inherit; font-size:14px; text-align:left; cursor:pointer; margin:0; }
+  .pend-flecha { margin-left:auto; font-size:16px; transition:transform .15s; }
+  .pendientes.cerrado .pend-flecha { transform:rotate(-90deg); }
+  .pendientes.cerrado .pend-cuerpo { display:none; }
+  .pend-cuerpo { border-top:1px solid #9ec3ea; background:#f6faff; border-radius:0 0 8px 8px; padding:4px 14px 10px; max-height:380px; overflow:auto; }
+  .pend-grupo h4 { margin:12px 0 4px; font-size:13px; }
+  .pend-fila { display:flex; gap:6px 12px; align-items:center; flex-wrap:wrap; padding:5px 0; border-top:1px solid var(--borde); font-size:13.5px; }
+  .pend-fila .enlace { font-weight:600; text-align:left; }
+  .pend-fila .pend-acc { margin-left:auto; }
   .chip.nuevo { background:#dbeafe; color:#0b57a4; }
   .hist-fila { font-size:12.5px; padding:5px 0; border-top:1px solid var(--borde); }
   .hist-fila:first-child { border-top:0; }
@@ -292,30 +303,11 @@
   </div>
 </header>
 <main>
-  <div id="avisoDocs" class="aviso aviso-docs" role="status" hidden>
-    <b id="avisoDocsTexto"></b>
-    <button class="btn-peq" id="verPorRevisar" style="margin-left:8px">Ver quiénes</button>
-    <button class="cerrar-aviso" id="cerrarAvisoDocs" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
-  </div>
-  <div id="avisoBienvenidas" class="aviso aviso-docs" role="status" hidden>
-    <b id="avisoBienvenidasTexto"></b>
-    <button class="btn-peq" id="verBienvenidas" style="margin-left:8px">Ver quiénes</button>
-    <button class="cerrar-aviso" id="cerrarAvisoBienvenidas" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
-  </div>
-  <div id="avisoNuevas" class="aviso aviso-docs" role="status" hidden>
-    <b id="avisoNuevasTexto"></b>
-    <button class="btn-peq" id="verNuevas" style="margin-left:8px">Ver quiénes</button>
-    <button class="cerrar-aviso" id="cerrarAvisoNuevas" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
-  </div>
-  <div id="avisoDirectorio" class="aviso aviso-docs" role="status" hidden>
-    <b id="avisoDirectorioTexto"></b>
-    <button class="btn-peq" id="verPorDirectorio" style="margin-left:8px">Ver quiénes</button>
-    <button class="cerrar-aviso" id="cerrarAvisoDirectorio" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
-  </div>
-  <div id="avisoRechazos" class="aviso aviso-docs" role="status" hidden>
-    <b id="avisoRechazosTexto"></b>
-    <button class="btn-peq" id="verRechazos" style="margin-left:8px">Ver quiénes</button>
-    <button class="cerrar-aviso" id="cerrarAvisoRechazos" type="button" aria-label="Cerrar este aviso" title="Cerrar este aviso (vuelve a salir al entrar o al actualizar)">✕</button>
+  <div id="pendientes" class="pendientes" hidden>
+    <button type="button" class="pend-cab" id="pendientesCab" aria-expanded="true" aria-controls="pendientesCuerpo">
+      <b>🔔 Pendientes</b> <span id="pendientesResumen" class="sub"></span> <span class="pend-flecha" id="pendientesFlecha" aria-hidden="true">▾</span>
+    </button>
+    <div id="pendientesCuerpo" class="pend-cuerpo"></div>
   </div>
   <div id="avisoCorrecciones" class="aviso aviso-docs" role="status" hidden>
     <b id="avisoCorreccionesTexto"></b>
@@ -411,7 +403,7 @@
       <h2>2. Qué verás</h2>
       <ul>
         <li><b>El listado</b> de postulaciones, con buscador y filtros (etapa, fecha, alertas, región). Al hacer clic en un nombre se abre su <b>ficha</b> a la derecha, con sus datos, los pasos de admisión, los documentos y el historial de cambios.</li>
-        <li><b>Avisos azules arriba:</b> «postulantes enviaron documentos y esperan revisión», «postulantes nuevas esperan que se les envíe la carta», «postulantes con la identidad verificada esperan que se les envíe la validación del Directorio», «postulaciones detenidas por el rechazo de un director», «socias aprobadas por el Directorio esperan su carta de bienvenida» o «enviaron una corrección de sus datos». Cada uno tiene un botón para ir directo a ellas y una ✕ para cerrarlo; vuelve a salir al entrar o al actualizar.</li>
+        <li><b>Panel «Pendientes» (arriba):</b> reúne lo que hay que hacer, con el nombre de cada persona y el botón para hacerlo sin buscar ni filtrar: revisar documentos, enviar la carta de invitación, enviar a los directores, ver quiénes faltan por votar, decidir las postulaciones detenidas por un rechazo y enviar cartas de bienvenida. Se actualiza solo al hacer cada tarea. Con la flecha se pliega; vuelve a abrirse al entrar o al actualizar. Las correcciones de datos siguen con su propio aviso.</li>
             <li><b>Postulaciones activas y no activas:</b> marca las casillas de la izquierda y pulsa <b>Marcar como no activas</b> para dejar de gestionar a quienes ya no interesan. Pasan a la pestaña <b>Otras</b> y salen de los avisos, <b>no se borra nada</b>, y desde ahí se pueden <b>volver a activar</b> (filtro «No activas · postulaciones antiguas»).</li>
         <li><b>Postulación en «No califica»:</b> su ficha ofrece el botón <b>Carta: solo mujeres del ámbito privado</b>, con el texto aprobado por AMAGRO (abre Gmail con el mensaje listo y deja el PDF con logo). Úsalo <b>solo</b> si el motivo es ese, y <b>borra antes el carnet</b>: la carta dice que ya fue eliminado.</li>
         <li><b>Validación del Directorio:</b> al verificar la identidad y borrar el carnet, se abre sola la pantalla para enviar a cada director su enlace personal (se abre en Gmail y tú envías). Cada director ve los datos de la postulante y su carta firmada, y aprueba o rechaza. Cuando aprueban <b>todos</b>, pasa sola a <b>Socia</b> (aunque aún no pague la primera cuota). Si uno rechaza, queda detenida y la administradora decide: reabrir la votación o rechazarla.</li>
@@ -593,6 +585,7 @@
       <option value="porrevisar">Documentos recibidos por revisar</option>
       <option value="enlacesinabrir">Con enlace, sin documentos todavía (sin abrir, sin subir o vencido)</option>
       <option value="aldirectorio">Por enviar al Directorio (identidad verificada)</option>
+      <option value="envotacion">Esperando votos del Directorio</option>
       <option value="rechazodir">Detenidas por el rechazo de un director</option>
       <option value="marcadas">Marcadas como duplicadas</option>
     </select>
@@ -805,6 +798,6 @@
 <script src="mensaje.js?v=fee008b9"></script>
 <script src="sugerencias.js?v=d087c477"></script>
 <script src="planilla.js?v=8280509e"></script>
-<script src="ui.js?v=6d4fffb6"></script>
+<script src="ui.js?v=04a0f5c9"></script>
 </body>
 </html>

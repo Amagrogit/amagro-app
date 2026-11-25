@@ -161,6 +161,8 @@ const bienvenidaPendiente = d => !!(d.pasos.aprobada && !d.pasos.bienvenida && !
 const nuevaSinCarta = d => !d.inactiva && !d.duplicadaDe && d.etapa === 'Sin gestión' && !d.pasos.cartaEnviada;
 // Identidad verificada y todavía sin enlaces para el Directorio (falta enviarlos).
 const porEnviarDirectorio = d => !d.inactiva && !d.duplicadaDe && !['Socia', 'Renuncia', 'No califica'].includes(d.etapa) && !!d.pasos.identidad && !d.directorio;
+// Ya se enviaron los enlaces y faltan votos de los directores.
+const enVotacionDirectorio = d => !d.inactiva && !d.duplicadaDe && !!d.directorio && d.directorio.estado === 'en-curso';
 // Un director la rechazó: queda detenida hasta que la administradora decida.
 const rechazadaPorDirectorio = d => !d.inactiva && !d.duplicadaDe && !!d.directorio && d.directorio.estado === 'detenida';
 function filaSocia(d) {
@@ -234,7 +236,7 @@ function pintar() {
     (!fg || estadoGrupo(d) === fg) &&
     (!fb || bienvenidaPendiente(d)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
-    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'enlacesinabrir' ? !!d.enlace && !d.inactiva && !(d.docs && d.docs.recibidos) && ['sin-abrir', 'abierto', 'vencido'].includes(d.enlace.estado) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'enlacesinabrir' ? !!d.enlace && !d.inactiva && !(d.docs && d.docs.recibidos) && ['sin-abrir', 'abierto', 'vencido'].includes(d.enlace.estado) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : f === 'envotacion' ? enVotacionDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
     (!fcom || (fcom === '*' ? d.comisiones.length > 0 : fcom === 'coord' ? d.comisiones.some(c => c.rol === 'coordinadora') : d.comisiones.some(c => c.id === fcom))) &&
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
@@ -2083,34 +2085,52 @@ $('sociasResultado').addEventListener('click', async e => {
   mostrar('Listo: se actualizaron ' + r.aplicadas + ' fichas' + (r.fallidas ? ' (' + r.fallidas + ' no se pudieron guardar: vuelve a intentar)' : '') + '.', !!r.fallidas);
 });
 
-// ---- Avisos de novedades (documentos y correcciones por revisar) ----
-// Cada aviso azul se puede cerrar con la ✕ y no vuelve a salir hasta que se entre de nuevo o se actualice la pantalla principal
-// (↻ Actualizar o recargar la página). Las consultas automáticas de cada minuto no lo vuelven a abrir.
-const avisoCerrado = { docs: false, correcciones: false, bienvenidas: false, directorio: false, rechazos: false, nuevas: false };
-let ultimoDocs = 0, ultimoCorrecciones = 0;
+// ---- Avisos de novedades: panel «Pendientes» y correcciones ----
+// El panel reúne las tareas con el nombre de cada persona y su botón, para gestionar sin filtrar ni buscar. Se calcula con la lista que
+// ya está cargada, así se actualiza solo al hacer cada tarea. Se puede plegar con la flecha; vuelve a abrirse al entrar o al actualizar.
+// El aviso de correcciones se puede cerrar con la ✕ y no vuelve a salir hasta que se entre de nuevo o se actualice la pantalla principal.
+const avisoCerrado = { docs: false, correcciones: false };
+let ultimoDocs = 0, ultimoCorrecciones = 0, pendientesPlegado = false;
 function reabrirAvisos() {
-  avisoCerrado.docs = avisoCerrado.correcciones = avisoCerrado.bienvenidas = avisoCerrado.directorio = avisoCerrado.rechazos = avisoCerrado.nuevas = false;
+  avisoCerrado.docs = avisoCerrado.correcciones = false;
+  pendientesPlegado = false;
   actualizarAvisoBienvenidas();
   actualizarAvisoDocs(ultimoDocs);
   actualizarAvisoCorrecciones(ultimoCorrecciones);
 }
-// ---- Aviso de socias aprobadas por el Directorio a las que falta enviar la carta de bienvenida ----
-// Se calcula con la lista que ya está cargada, así se actualiza solo al enviar cada bienvenida.
+const TAREAS_PENDIENTES = [
+  { id: 'rechazo', titulo: '⚠ Detenidas: un director rechazó la postulación', cond: rechazadaPorDirectorio, detalle: () => 'La administradora debe decidir qué hacer', accion: () => ({ tipo: 'ficha', texto: 'Decidir' }) },
+  { id: 'docs', titulo: 'Documentos recibidos por revisar', cond: d => !!d.pendienteRevision, detalle: d => (d.docs ? 'Recibidos el ' + fechaHoraCL(d.docs.ultimo) : ''), accion: () => ({ tipo: 'ficha', texto: 'Revisar' }) },
+  { id: 'nuevas', titulo: 'Postulantes nuevas: enviar la carta de invitación', cond: nuevaSinCarta, detalle: d => (d.postulacion ? 'Postuló el ' + fechaCL(d.postulacion.slice(0, 10)) : '') + (d.correo ? '' : ' · sin correo'), accion: d => (d.correo ? { tipo: 'carta', texto: '✉ Enviar carta' } : { tipo: 'ficha', texto: 'Abrir ficha' }) },
+  { id: 'aldirectorio', titulo: 'Identidad verificada: enviar a los directores', cond: porEnviarDirectorio, detalle: () => 'Falta enviarles los enlaces de votación', accion: () => ({ tipo: 'directorio', texto: '✉ Enviar a los directores' }) },
+  { id: 'bienvenida', titulo: 'Aprobadas por el Directorio: enviar la carta de bienvenida', cond: bienvenidaPendiente, detalle: d => (d.pasos.aprobada ? 'Aprobada el ' + fechaCL(d.pasos.aprobada.fecha) : ''), accion: d => (d.correo ? { tipo: 'bienvenida', texto: '✉ Enviar bienvenida' } : { tipo: 'ficha', texto: 'Abrir ficha' }) },
+  { id: 'votacion', titulo: 'Esperando los votos del Directorio', cond: enVotacionDirectorio, detalle: d => d.directorio.aprobaron + ' de ' + d.directorio.total + ' aprobaron' + (d.directorio.diasHabiles != null ? ' · lleva ' + diasTexto(d.directorio.diasHabiles) : '') + (d.directorio.plazoVencido ? ' · pasó el plazo' : ''), accion: () => ({ tipo: 'ficha', texto: 'Ver votos' }) },
+];
 function actualizarAvisoBienvenidas() {
-  const n = datos.filter(bienvenidaPendiente).length;
-  $('avisoBienvenidas').hidden = !n || avisoCerrado.bienvenidas;
-  $('avisoBienvenidasTexto').textContent = n === 1 ? '1 socia aprobada por el Directorio espera su carta de bienvenida.' : n + ' socias aprobadas por el Directorio esperan su carta de bienvenida.';
-  // Postulantes nuevas que llegaron por la planilla y esperan su carta de invitación.
-  const nv = datos.filter(nuevaSinCarta).length;
-  $('avisoNuevas').hidden = !nv || avisoCerrado.nuevas;
-  $('avisoNuevasTexto').textContent = nv === 1 ? '1 postulante nueva espera que se le envíe la carta de invitación.' : nv + ' postulantes nuevas esperan que se les envíe la carta de invitación.';
-  // Validación del Directorio: las que faltan enviar a los directores y las detenidas por un rechazo.
-  const e = datos.filter(porEnviarDirectorio).length, r = datos.filter(rechazadaPorDirectorio).length;
-  $('avisoDirectorio').hidden = !e || avisoCerrado.directorio;
-  $('avisoDirectorioTexto').textContent = e === 1 ? '1 postulante con la identidad verificada espera que se le envíe la validación del Directorio.' : e + ' postulantes con la identidad verificada esperan que se les envíe la validación del Directorio.';
-  $('avisoRechazos').hidden = !r || avisoCerrado.rechazos;
-  $('avisoRechazosTexto').textContent = r === 1 ? '⚠ 1 postulación detenida: un director la rechazó. La administradora debe decidir qué hacer.' : '⚠ ' + r + ' postulaciones detenidas: un director las rechazó. La administradora debe decidir qué hacer.';
+  const panel = $('pendientes');
+  const grupos = TAREAS_PENDIENTES.map(t => ({ t, filas: datos.filter(t.cond) })).filter(g => g.filas.length);
+  const total = grupos.reduce((s, g) => s + g.filas.length, 0);
+  panel.hidden = !total;
+  panel.classList.toggle('cerrado', pendientesPlegado);
+  $('pendientesCab').setAttribute('aria-expanded', String(!pendientesPlegado));
+  $('pendientesResumen').textContent = total ? '· ' + total + (total === 1 ? ' tarea' : ' tareas') + (pendientesPlegado ? ' (toca para abrir)' : '') : '';
+  $('pendientesCuerpo').innerHTML = grupos.map(({ t, filas }) => `<div class="pend-grupo"><h4>${esc(t.titulo)} <span class="chip">${filas.length}</span></h4>${filas.map(d => {
+    const a = t.accion(d), det = t.detalle(d);
+    return `<div class="pend-fila"><button class="enlace" data-pend="ficha" data-fila="${d.fila}">${esc(d.nombre)}</button>${det ? `<span class="sub">${esc(det)}</span>` : ''}<span class="pend-acc"><button class="btn-peq${a.tipo === 'ficha' ? ' sec' : ''}" data-pend="${a.tipo}" data-fila="${d.fila}">${esc(a.texto)}</button></span></div>`;
+  }).join('')}</div>`).join('');
 }
+$('pendientesCab').addEventListener('click', () => { pendientesPlegado = !pendientesPlegado; actualizarAvisoBienvenidas(); });
+$('pendientesCuerpo').addEventListener('click', e => {
+  const b = e.target.closest('[data-pend]');
+  if (!b || !puedeSalir()) return;
+  const fila = Number(b.dataset.fila), d = datos.find(x => x.fila === fila);
+  if (!d) return;
+  editando = false;
+  if (b.dataset.pend === 'carta') abrirModalCarta(fila);
+  else if (b.dataset.pend === 'bienvenida') abrirModalBienvenida(fila);
+  else if (b.dataset.pend === 'directorio') abrirModalDirectorio(d);
+  else abrirFicha(fila);
+});
 function verEnPostulantes(filtro, etapa = '') {
   if (!puedeSalir()) return;
   cerrarFicha();
@@ -2118,27 +2138,10 @@ function verEnPostulantes(filtro, etapa = '') {
   $('etapa').value = etapa; $('filtro').value = filtro;
   pintar();
 }
-$('cerrarAvisoNuevas').addEventListener('click', () => { avisoCerrado.nuevas = true; $('avisoNuevas').hidden = true; });
-$('verNuevas').addEventListener('click', () => verEnPostulantes('todas', 'Sin gestión'));
-$('cerrarAvisoDirectorio').addEventListener('click', () => { avisoCerrado.directorio = true; $('avisoDirectorio').hidden = true; });
-$('cerrarAvisoRechazos').addEventListener('click', () => { avisoCerrado.rechazos = true; $('avisoRechazos').hidden = true; });
-$('verPorDirectorio').addEventListener('click', () => verEnPostulantes('aldirectorio'));
-$('verRechazos').addEventListener('click', () => verEnPostulantes('rechazodir'));
-$('cerrarAvisoBienvenidas').addEventListener('click', () => { avisoCerrado.bienvenidas = true; $('avisoBienvenidas').hidden = true; });
-$('verBienvenidas').addEventListener('click', () => {
-  if (!puedeSalir()) return;
-  cerrarFicha();
-  cambiarPestana('socias');
-  $('filtroBienv').value = 'pendiente';
-  pintar();
-});
-$('cerrarAvisoDocs').addEventListener('click', () => { avisoCerrado.docs = true; $('avisoDocs').hidden = true; });
 $('cerrarAvisoCorrecciones').addEventListener('click', () => { avisoCerrado.correcciones = true; $('avisoCorrecciones').hidden = true; });
 // ---- Aviso de documentos por revisar ----
 function actualizarAvisoDocs(n) {
-  ultimoDocs = n;
-  $('avisoDocs').hidden = !n || avisoCerrado.docs;
-  $('avisoDocsTexto').textContent = n === 1 ? '1 postulante envió documentos y espera revisión.' : n + ' postulantes enviaron documentos y esperan revisión.';
+  ultimoDocs = n; // el panel «Pendientes» ya cuenta los documentos por revisar desde la lista
 }
 // ---- Correcciones enviadas por las postulantes ----
 function actualizarAvisoCorrecciones(n) {
@@ -2180,11 +2183,6 @@ $('correccionesLista').addEventListener('click', async e => {
   if (!$('correccionesLista').querySelector('[data-correccion]')) cerrarPaneles();
 });
 
-$('verPorRevisar').addEventListener('click', () => {
-  cambiarPestana('postulantes');
-  $('filtro').value = 'porrevisar';
-  if (puedeSalir()) { cerrarFicha(); pintar(); }
-});
 
 // Cada minuto se consulta si llegó algo nuevo; si cambió y no se está escribiendo nada, se recarga la lista.
 let firmaPendientes = null, temporizadorPendientes = null;
