@@ -157,6 +157,8 @@ const chipEnlace = e => e.estado === 'sin-abrir' ? '<span class="chip pend" titl
   : e.estado === 'vencido' ? '<span class="chip mal" title="El enlace venció sin que subiera documentos: hay que crear uno nuevo">Enlace vencido</span>' : '';
 // Aprobada por el Directorio (ya es socia) y todavía sin la carta de bienvenida.
 const bienvenidaPendiente = d => !!(d.pasos.aprobada && !d.pasos.bienvenida && !d.inactiva && !d.duplicadaDe);
+// Postulante nueva (entró por la planilla): todavía sin gestión y sin carta enviada.
+const nuevaSinCarta = d => !d.inactiva && !d.duplicadaDe && d.etapa === 'Sin gestión' && !d.pasos.cartaEnviada;
 // Identidad verificada y todavía sin enlaces para el Directorio (falta enviarlos).
 const porEnviarDirectorio = d => !d.inactiva && !d.duplicadaDe && !['Socia', 'Renuncia', 'No califica'].includes(d.etapa) && !!d.pasos.identidad && !d.directorio;
 // Un director la rechazó: queda detenida hasta que la administradora decida.
@@ -2084,10 +2086,10 @@ $('sociasResultado').addEventListener('click', async e => {
 // ---- Avisos de novedades (documentos y correcciones por revisar) ----
 // Cada aviso azul se puede cerrar con la ✕ y no vuelve a salir hasta que se entre de nuevo o se actualice la pantalla principal
 // (↻ Actualizar o recargar la página). Las consultas automáticas de cada minuto no lo vuelven a abrir.
-const avisoCerrado = { docs: false, correcciones: false, bienvenidas: false, directorio: false, rechazos: false };
+const avisoCerrado = { docs: false, correcciones: false, bienvenidas: false, directorio: false, rechazos: false, nuevas: false };
 let ultimoDocs = 0, ultimoCorrecciones = 0;
 function reabrirAvisos() {
-  avisoCerrado.docs = avisoCerrado.correcciones = avisoCerrado.bienvenidas = avisoCerrado.directorio = avisoCerrado.rechazos = false;
+  avisoCerrado.docs = avisoCerrado.correcciones = avisoCerrado.bienvenidas = avisoCerrado.directorio = avisoCerrado.rechazos = avisoCerrado.nuevas = false;
   actualizarAvisoBienvenidas();
   actualizarAvisoDocs(ultimoDocs);
   actualizarAvisoCorrecciones(ultimoCorrecciones);
@@ -2098,6 +2100,10 @@ function actualizarAvisoBienvenidas() {
   const n = datos.filter(bienvenidaPendiente).length;
   $('avisoBienvenidas').hidden = !n || avisoCerrado.bienvenidas;
   $('avisoBienvenidasTexto').textContent = n === 1 ? '1 socia aprobada por el Directorio espera su carta de bienvenida.' : n + ' socias aprobadas por el Directorio esperan su carta de bienvenida.';
+  // Postulantes nuevas que llegaron por la planilla y esperan su carta de invitación.
+  const nv = datos.filter(nuevaSinCarta).length;
+  $('avisoNuevas').hidden = !nv || avisoCerrado.nuevas;
+  $('avisoNuevasTexto').textContent = nv === 1 ? '1 postulante nueva espera que se le envíe la carta de invitación.' : nv + ' postulantes nuevas esperan que se les envíe la carta de invitación.';
   // Validación del Directorio: las que faltan enviar a los directores y las detenidas por un rechazo.
   const e = datos.filter(porEnviarDirectorio).length, r = datos.filter(rechazadaPorDirectorio).length;
   $('avisoDirectorio').hidden = !e || avisoCerrado.directorio;
@@ -2105,13 +2111,15 @@ function actualizarAvisoBienvenidas() {
   $('avisoRechazos').hidden = !r || avisoCerrado.rechazos;
   $('avisoRechazosTexto').textContent = r === 1 ? '⚠ 1 postulación detenida: un director la rechazó. La administradora debe decidir qué hacer.' : '⚠ ' + r + ' postulaciones detenidas: un director las rechazó. La administradora debe decidir qué hacer.';
 }
-function verEnPostulantes(filtro) {
+function verEnPostulantes(filtro, etapa = '') {
   if (!puedeSalir()) return;
   cerrarFicha();
   cambiarPestana('postulantes');
-  $('etapa').value = ''; $('filtro').value = filtro;
+  $('etapa').value = etapa; $('filtro').value = filtro;
   pintar();
 }
+$('cerrarAvisoNuevas').addEventListener('click', () => { avisoCerrado.nuevas = true; $('avisoNuevas').hidden = true; });
+$('verNuevas').addEventListener('click', () => verEnPostulantes('todas', 'Sin gestión'));
 $('cerrarAvisoDirectorio').addEventListener('click', () => { avisoCerrado.directorio = true; $('avisoDirectorio').hidden = true; });
 $('cerrarAvisoRechazos').addEventListener('click', () => { avisoCerrado.rechazos = true; $('avisoRechazos').hidden = true; });
 $('verPorDirectorio').addEventListener('click', () => verEnPostulantes('aldirectorio'));
