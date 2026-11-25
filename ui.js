@@ -2114,7 +2114,7 @@ function actualizarAvisoBienvenidas() {
   panel.classList.toggle('cerrado', pendientesPlegado);
   $('pendientesCab').setAttribute('aria-expanded', String(!pendientesPlegado));
   $('pendientesResumen').textContent = total ? '· ' + total + (total === 1 ? ' tarea' : ' tareas') + (pendientesPlegado ? ' (toca para abrir)' : '') : '';
-  $('pendientesCuerpo').innerHTML = grupos.map(({ t, filas }) => `<div class="pend-grupo"><h4>${esc(t.titulo)} <span class="chip">${filas.length}</span></h4>${filas.map(d => {
+  $('pendientesCuerpo').innerHTML = grupos.map(({ t, filas }) => `<div class="pend-grupo pend-${t.id}"><h4>${esc(t.titulo)} <span class="chip">${filas.length}</span></h4>${filas.map(d => {
     const a = t.accion(d), det = t.detalle(d);
     return `<div class="pend-fila"><button class="enlace" data-pend="ficha" data-fila="${d.fila}">${esc(d.nombre)}</button>${det ? `<span class="sub">${esc(det)}</span>` : ''}<span class="pend-acc"><button class="btn-peq${a.tipo === 'ficha' ? ' sec' : ''}" data-pend="${a.tipo}" data-fila="${d.fila}">${esc(a.texto)}</button></span></div>`;
   }).join('')}</div>`).join('');

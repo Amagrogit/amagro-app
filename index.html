@@ -201,8 +201,20 @@
   .pendientes.cerrado .pend-flecha { transform:rotate(-90deg); }
   .pendientes.cerrado .pend-cuerpo { display:none; }
   .pend-cuerpo { border-top:1px solid #9ec3ea; background:#f6faff; border-radius:0 0 8px 8px; padding:4px 14px 10px; max-height:380px; overflow:auto; }
-  .pend-grupo h4 { margin:12px 0 4px; font-size:13px; }
-  .pend-fila { display:flex; gap:6px 12px; align-items:center; flex-wrap:wrap; padding:5px 0; border-top:1px solid var(--borde); font-size:13.5px; }
+  /* Cada tipo de tarea tiene su color (--pc: fuerte, --pf: fondo, --pt: texto) para distinguirlas de un vistazo. */
+  .pend-grupo { --pc:#1f6fc9; --pf:#eef5fd; --pt:#0b4a94; border-left:4px solid var(--pc); background:var(--pf); border-radius:6px; padding:2px 12px 6px; margin:10px 0; }
+  .pend-rechazo { --pc:#c0392b; --pf:#fdecea; --pt:#8f1d12; }
+  .pend-docs { --pc:#1f6fc9; --pf:#e8f1fb; --pt:#0b4a94; }
+  .pend-nuevas { --pc:#2e8b57; --pf:#e8f6ee; --pt:#1d6b40; }
+  .pend-aldirectorio { --pc:#7b4bb7; --pf:#f1eafa; --pt:#57308a; }
+  .pend-bienvenida { --pc:#d99a1c; --pf:#fff6e0; --pt:#8a5d00; }
+  .pend-votacion { --pc:#5b6b7a; --pf:#eef1f4; --pt:#3a4752; }
+  .pend-grupo h4 { margin:8px 0 4px; font-size:13px; color:var(--pt); }
+  .pend-grupo h4 .chip { background:var(--pc); border-color:var(--pc); color:#fff; }
+  .pend-grupo .btn-peq:not(.sec) { background:var(--pc); border-color:var(--pc); color:#fff; }
+  .pend-grupo .btn-peq.sec { background:#fff; border-color:var(--pc); color:var(--pt); }
+  .pend-grupo .enlace { color:var(--pt); }
+  .pend-fila { display:flex; gap:6px 12px; align-items:center; flex-wrap:wrap; padding:5px 0; border-top:1px solid rgba(0,0,0,.08); font-size:13.5px; }
   .pend-fila .enlace { font-weight:600; text-align:left; }
   .pend-fila .pend-acc { margin-left:auto; }
   .chip.nuevo { background:#dbeafe; color:#0b57a4; }
@@ -798,6 +810,6 @@
 <script src="mensaje.js?v=fee008b9"></script>
 <script src="sugerencias.js?v=d087c477"></script>
 <script src="planilla.js?v=8280509e"></script>
-<script src="ui.js?v=04a0f5c9"></script>
+<script src="ui.js?v=f99e1ea6"></script>
 </body>
 </html>
