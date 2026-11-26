@@ -1883,6 +1883,21 @@ function pintarDirectorio({ resumen: r, paginaSubida, puedeDecidir, plazoDiasHab
   return `<p style="margin:0 0 6px"><b>${esc(titulo)}</b></p>${plazo}${tarjetasDirectores(r)}${enviar}${decidir}`;
 }
 
+// Las directoras también son socias: su teléfono se toma de su ficha. Se busca primero por correo; por nombre solo si hay una única coincidencia
+// (así un enlace con datos de una postulante nunca se manda a otra persona por error).
+const sinAcentos = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function telefonoDirector(e) {
+  const cor = String(e.correo || '').trim().toLowerCase();
+  const personas = datos.filter(x => !x.duplicadaDe && x.telefono && telefonoWhatsapp(x.telefono));
+  let p = cor ? personas.find(x => String(x.correo || '').trim().toLowerCase() === cor) : null;
+  if (!p) {
+    const toks = sinAcentos(e.nombre).split(/\s+/).filter(t => t.length > 1);
+    const coinciden = toks.length >= 2 ? personas.filter(x => { const n = sinAcentos(x.nombre).split(/\s+/); return toks.every(t => n.includes(t)); }) : [];
+    if (coinciden.length === 1) p = coinciden[0];
+  }
+  return p ? { crudo: p.telefono, numero: telefonoWhatsapp(p.telefono) } : null;
+}
+
 // Pantalla de envío: un correo por director, con su enlace personal, listo en Gmail (la persona lo revisa y pulsa Enviar).
 // Se abre sola al verificar la identidad y borrar el carnet, o desde el botón de la ficha.
 let dirEnvio = null; // { d, enlaces: [{ director, nombre, cargo, correo, url, vence_en, abierto }], resumen, error, ocupado }
@@ -1896,10 +1911,11 @@ function pintarModalDirectorio() {
   if (ocupado) h += '<p class="sub">Preparando los enlaces…</p>';
   else if (enlaces.length) {
     const abiertos = enlaces.filter(e => e.abierto).length;
-    h += `<p class="sub" style="margin:0 0 8px">Cada correo lleva el enlace personal de un director. Pulsa <b>Enviar por Gmail</b>, revisa el correo y envíalo allí. Los enlaces solo se ven ahora: si cierras sin enviar alguno, tendrás que crear enlaces nuevos. <b>${abiertos} de ${enlaces.length}</b> abiertos en Gmail.</p>`;
+    h += `<p class="sub" style="margin:0 0 8px">Cada correo lleva el enlace personal de un director. Pulsa <b>Enviar por Gmail</b> (o <b>WhatsApp</b>), revisa el mensaje y envíalo allí. Los enlaces solo se ven ahora: si cierras sin enviar alguno, tendrás que crear enlaces nuevos. <b>${abiertos} de ${enlaces.length}</b> abiertos en Gmail.</p>`;
     h += enlaces.map((e, i) => `<div class="hist-fila"><b>${esc(e.nombre)}</b>${e.cargo ? ' <span class="sub">(' + esc(e.cargo) + ')</span>' : ''} · <span class="sub">${esc(e.correo)}</span><br>
         <button class="btn-peq" data-dir-gmail="${i}" title="Abre Gmail con el correo listo; tú revisas y pulsas Enviar">${e.abierto ? '↻ Abrir de nuevo en Gmail' : '✉ Enviar por Gmail'}</button>
-        <button class="sec btn-peq" data-dir-copia="${i}">Copiar enlace</button>${e.abierto ? ' <span class="chip ok">✓ Gmail abierto</span>' : ''}</div>`).join('');
+        ${telefonoDirector(e) ? `<button class="btn-peq" data-dir-wa="${i}" style="background:#1f9d55;border-color:#1f9d55" title="Abre WhatsApp con el mensaje y el enlace listos para ${esc(telefonoDirector(e).crudo)}; tú pulsas Enviar">💬 WhatsApp</button>` : '<span class="sub" title="No se encontró su teléfono en su ficha de socia">sin teléfono en su ficha</span>'}
+        <button class="sec btn-peq" data-dir-copia="${i}">Copiar enlace</button>${e.abierto ? ' <span class="chip ok">✓ Enviado / abierto</span>' : ''}</div>`).join('');
   } else if (r) {
     h += `<p style="margin:0 0 6px"><b>${r.estado === 'aprobada' ? '✔ Aprobada por todo el Directorio: no hay nada que enviar.' : 'Ya se enviaron enlaces a los directores. Los códigos no se pueden volver a ver.'}</b></p>${filasDirectores(r)}`;
     if (r.estado !== 'aprobada') h += '<button class="btn-peq" data-dir-nuevos style="margin-top:8px" title="Los enlaces anteriores de quienes faltan dejan de servir">Crear enlaces nuevos para quienes faltan</button>';
@@ -1907,14 +1923,15 @@ function pintarModalDirectorio() {
   $('dirEnvioCuerpo').innerHTML = h;
 }
 async function pedirEnlacesDirectorio() {
+  const recordatorio = !!(dirEnvio.resumen && dirEnvio.resumen.estado !== 'sin-enlaces'); // ya se había enviado antes: es un recordatorio con enlace nuevo
   dirEnvio.ocupado = true; dirEnvio.error = ''; pintarModalDirectorio();
   const r = await post('/api/directorio/enlaces', { clave: dirEnvio.d.clave });
   dirEnvio.ocupado = false;
   if (r.error) dirEnvio.error = r.error;
-  else { dirEnvio.enlaces = r.enlaces.map(e => ({ ...e, abierto: false })); dirEnvio.resumen = r.resumen; }
+  else { dirEnvio.enlaces = r.enlaces.map(e => ({ ...e, abierto: false })); dirEnvio.resumen = r.resumen; dirEnvio.recordatorio = recordatorio; }
   pintarModalDirectorio();
 }
-async function abrirModalDirectorio(d) {
+async function abrirModalDirectorio(d, recordar = false) {
   if (!d || d.inactiva) return;
   dirEnvio = { d, enlaces: [], resumen: null, error: '', ocupado: true };
   pintarModalDirectorio();
@@ -1927,6 +1944,10 @@ async function abrirModalDirectorio(d) {
   dirEnvio.resumen = j.resumen;
   if (j.resumen.estado === 'sin-enlaces') return pedirEnlacesDirectorio(); // primera vez: los enlaces se crean solos
   dirEnvio.ocupado = false; pintarModalDirectorio();
+  if (recordar && j.resumen.estado === 'en-curso') { // desde «Pendientes»: crea enlaces nuevos solo para quienes faltan, si se confirma
+    const faltan = j.resumen.lista.filter(x => !['aprobo', 'rechazo'].includes(x.estado)).map(x => x.nombre);
+    if (faltan.length && confirm('Se crearán enlaces nuevos para: ' + faltan.join(', ') + '.\nLos enlaces anteriores de ellas dejarán de servir (si ya se los enviaste, el mensaje les avisará que este es nuevo).\n\n¿Seguir?')) pedirEnlacesDirectorio();
+  }
 }
 async function cerrarModalDirectorio() {
   if (!dirEnvio) { $('modalDirectorio').hidden = true; return; }
@@ -1951,6 +1972,16 @@ $('modalDirectorio').addEventListener('click', async e => {
     const m = construirCorreoDirector({ director: en, postulante: { nombre: p.nombre, region: p.region, empresa: p.empresa }, url: en.url, vence: String(en.vence_en).slice(0, 10) });
     // Se abre dentro del clic, para que el navegador no bloquee la ventana.
     const ventana = window.open(urlGmail({ destinatario: m.destinatario, asunto: m.asunto, cuerpo: m.cuerpo, cuenta: correoEnvio, copia: remitente }), '_blank');
+    if (!ventana) return mostrar('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
+    en.abierto = true; pintarModalDirectorio();
+    return;
+  }
+  const w = e.target.closest('[data-dir-wa]');
+  if (w) {
+    const en = dirEnvio.enlaces[Number(w.dataset.dirWa)], p = dirEnvio.d, tel = telefonoDirector(en);
+    if (!tel) return mostrar('No se encontró el teléfono de ' + en.nombre + ' en su ficha de socia.', true);
+    const texto = construirWhatsappDirector({ director: en, postulante: { nombre: p.nombre, region: p.region, empresa: p.empresa }, url: en.url, vence: String(en.vence_en).slice(0, 10), recordatorio: !!dirEnvio.recordatorio });
+    const ventana = window.open(urlWhatsapp(tel.numero, texto), '_blank');
     if (!ventana) return mostrar('El navegador bloqueó la ventana nueva. Permite las ventanas emergentes para esta página e inténtalo de nuevo.', true);
     en.abierto = true; pintarModalDirectorio();
     return;
@@ -2104,7 +2135,7 @@ const TAREAS_PENDIENTES = [
   { id: 'nuevas', titulo: 'Postulantes nuevas: enviar la carta de invitación', cond: nuevaSinCarta, detalle: d => (d.postulacion ? 'Postuló el ' + fechaCL(d.postulacion.slice(0, 10)) : '') + (d.correo ? '' : ' · sin correo'), accion: d => (d.correo ? { tipo: 'carta', texto: '✉ Enviar carta' } : { tipo: 'ficha', texto: 'Abrir ficha' }) },
   { id: 'aldirectorio', titulo: 'Identidad verificada: enviar a los directores', cond: porEnviarDirectorio, detalle: () => 'Falta enviarles los enlaces de votación', accion: () => ({ tipo: 'directorio', texto: '✉ Enviar a los directores' }) },
   { id: 'bienvenida', titulo: 'Aprobadas por el Directorio: enviar la carta de bienvenida', cond: bienvenidaPendiente, detalle: d => (d.pasos.aprobada ? 'Aprobada el ' + fechaCL(d.pasos.aprobada.fecha) : ''), accion: d => (d.correo ? { tipo: 'bienvenida', texto: '✉ Enviar bienvenida' } : { tipo: 'ficha', texto: 'Abrir ficha' }) },
-  { id: 'votacion', titulo: 'Esperando los votos del Directorio', cond: enVotacionDirectorio, detalle: d => d.directorio.aprobaron + ' de ' + d.directorio.total + ' aprobaron' + (d.directorio.diasHabiles != null ? ' · lleva ' + diasTexto(d.directorio.diasHabiles) : '') + (d.directorio.plazoVencido ? ' · pasó el plazo' : ''), accion: () => ({ tipo: 'ficha', texto: 'Ver votos' }) },
+  { id: 'votacion', titulo: 'Esperando los votos del Directorio', cond: enVotacionDirectorio, detalle: d => d.directorio.aprobaron + ' de ' + d.directorio.total + ' aprobaron' + (d.directorio.diasHabiles != null ? ' · lleva ' + diasTexto(d.directorio.diasHabiles) : '') + (d.directorio.plazoVencido ? ' · pasó el plazo' : ''), accion: () => ({ tipo: 'recordar', texto: '🔔 Recordar' }) },
 ];
 function actualizarAvisoBienvenidas() {
   const panel = $('pendientes');
@@ -2129,6 +2160,7 @@ $('pendientesCuerpo').addEventListener('click', e => {
   if (b.dataset.pend === 'carta') abrirModalCarta(fila);
   else if (b.dataset.pend === 'bienvenida') abrirModalBienvenida(fila);
   else if (b.dataset.pend === 'directorio') abrirModalDirectorio(d);
+  else if (b.dataset.pend === 'recordar') abrirModalDirectorio(d, true);
   else abrirFicha(fila);
 });
 function verEnPostulantes(filtro, etapa = '') {

@@ -193,7 +193,42 @@
     };
   }
 
-  const api = { FIRMA_EQUIPO, construirMensaje, construirCorreoCarta, construirInvitacion, construirCorreoDirector, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
+  // Número para WhatsApp (solo dígitos, con el código del país): "+56 9 1234 5678", "9 1234 5678" o "12345678" -> "56912345678".
+  // Devuelve null si no parece un teléfono.
+  function telefonoWhatsapp(crudo) {
+    let t = String(crudo ?? '').trim().replace(/[^\d+]/g, '');
+    if (t.startsWith('+')) t = t.slice(1); else if (t.startsWith('00')) t = t.slice(2);
+    t = t.replace(/\D/g, '');
+    if (/^56\d{9}$/.test(t)) return t;
+    if (/^9\d{8}$/.test(t)) return '56' + t;
+    if (/^\d{8}$/.test(t)) return '569' + t;
+    return /^\d{10,15}$/.test(t) ? t : null;
+  }
+  const urlWhatsapp = (telefono, texto) => 'https://wa.me/' + telefono + '?text=' + encodeURIComponent(texto);
+
+  // Mismo contenido que el correo al director, en formato corto para WhatsApp. Con recordatorio avisa que el enlace es nuevo.
+  function construirWhatsappDirector({ director, postulante, url, vence, recordatorio = false, firma = FIRMA_EQUIPO }) {
+    const primer = capitalizar(String(director.nombre || '').trim().split(/\s+/)[0]) || 'hola';
+    const quien = nombreCompleto(postulante.nombre) || 'una postulante';
+    const region = nombreCompleto(postulante.region), empresa = String(postulante.empresa || '').trim();
+    const detalle = [region && 'región ' + region, empresa && 'empresa u organización: ' + empresa].filter(Boolean).join('; ');
+    return [
+      `Hola ${primer}, te escribo de AMAGRO AG.`,
+      '',
+      recordatorio
+        ? `Te recuerdo la validación del Directorio de ${quien}${detalle ? ' (' + detalle + ')' : ''}, que todavía espera tu voto. Te mando un enlace nuevo: el que te llegó antes por correo ya no sirve, usa este:`
+        : `${quien} postuló para ser socia${detalle ? ' (' + detalle + ')' : ''}. Necesitamos la aprobación de todo el Directorio. En este enlace personal puedes ver sus datos y su carta firmada, y aprobar o rechazar su ingreso:`,
+      '',
+      url,
+      '',
+      `El enlace es solo para ti y se vota una sola vez.${vence ? ' Vence el ' + fechaCL(vence) + '.' : ''}`,
+      '',
+      'Muchas gracias,',
+      firma,
+    ].join('\n');
+  }
+
+  const api = { FIRMA_EQUIPO, construirMensaje, construirCorreoCarta, construirInvitacion, construirCorreoDirector, construirWhatsappDirector, telefonoWhatsapp, urlWhatsapp, MARCA_ENLACE, MARCA_ENLACE_DATOS, urlGmail };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.assign(raiz, api);
 })(typeof window !== 'undefined' ? window : globalThis);
