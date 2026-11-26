@@ -1387,6 +1387,7 @@ class Almacen {
   // ---- Cuentas de usuarias (solo la administradora; crear y restablecer las hace la función de Supabase) ----
   usuarios() { return this.sesion.funcion('documentos', { accion: 'usuarios_listar' }); }
   crearUsuario({ correo, nombre, rol }) { return this.sesion.funcion('documentos', { accion: 'usuarios_crear', correo, nombre, rol }); }
+  enviarCorreo({ clave, para, asunto, cuerpo, tipo }) { return this.sesion.funcion('documentos', { accion: 'enviar_correo', clave, para, asunto, cuerpo, tipo }); }
   restablecerClave(id) { return this.sesion.funcion('documentos', { accion: 'usuarios_restablecer', id }); }
 
   // Últimos movimientos de cuentas (quién hizo qué con quién). Solo la administradora puede leerlo.
@@ -2026,6 +2027,16 @@ function crearApi({ sesion, almacen, proyecto, entorno = {} }) {
       await almacen.prepararCarta(clave, await E.carta.generarCarta(registro, { fecha: fecha === true }));
       const e = await almacen.crearEnlace(clave, 30);
       return ok({ url: urlPagina(`/#${e.token}`), vence_en: e.vence_en });
+    }
+    // Envía por correo (desde la cuenta configurada en Supabase) un mensaje a la postulante. Va solo a su correo registrado.
+    if (ruta === 'POST /api/correo/enviar') {
+      const { clave, asunto, cuerpo: texto, tipo } = JSON.parse(cuerpo);
+      const registro = await buscarRegistro(clave);
+      if (!registro) return fallo(404, NO_ENCONTRADA);
+      if (!registro.correo) return fallo(400, 'Esta persona no tiene correo registrado.');
+      if (typeof almacen.enviarCorreo !== 'function') return fallo(501, 'Este equipo no puede enviar correos automáticos.');
+      try { return ok(await almacen.enviarCorreo({ clave, para: registro.correo, asunto, cuerpo: texto, tipo })); }
+      catch (e) { return fallo(e.estado && e.estado >= 400 ? e.estado : 502, e.message || 'No se pudo enviar el correo.'); }
     }
     if (ruta === 'GET /api/documentos') {
       const clave = consulta.get('clave');

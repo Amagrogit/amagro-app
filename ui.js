@@ -236,7 +236,7 @@ function pintar() {
     (!fg || estadoGrupo(d) === fg) &&
     (!fb || bienvenidaPendiente(d)) &&
     (f === 'marcadas' ? !!d.duplicadaDe : f === 'inactivas' ? (d.inactiva && !d.duplicadaDe) : (!d.duplicadaDe && (pestana === 'otras' || !d.inactiva))) &&
-    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'enlacesinabrir' ? !!d.enlace && !d.inactiva && !(d.docs && d.docs.recibidos) && ['sin-abrir', 'abierto', 'vencido'].includes(d.enlace.estado) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : f === 'envotacion' ? enVotacionDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
+    (f === 'todas' || f === 'marcadas' || f === 'inactivas' || (f === 'duplicadas' ? d.relacionadas.length > 0 : f === 'sinrespuesta' ? !!d.seguimiento : f === 'porrevisar' ? !!d.pendienteRevision : f === 'aldirectorio' ? porEnviarDirectorio(d) : f === 'cartaporenviar' ? (d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe) : f === 'enlacesinabrir' ? !!d.enlace && !d.inactiva && !(d.docs && d.docs.recibidos) && ['sin-abrir', 'abierto', 'vencido'].includes(d.enlace.estado) : f === 'rechazodir' ? rechazadaPorDirectorio(d) : f === 'envotacion' ? enVotacionDirectorio(d) : (f === 'alertas') === (d.alertas.length > 0))) &&
     (!reg || d.region === reg) && (!et || (et === '__inactivas' ? d.inactiva : d.etapa === et)) &&
     (!fcom || (fcom === '*' ? d.comisiones.length > 0 : fcom === 'coord' ? d.comisiones.some(c => c.rol === 'coordinadora') : d.comisiones.some(c => c.id === fcom))) &&
     (!fc || (fc === 'fundadora' ? d.fundadora : fc === '*' ? d.cargosDetalle.length > 0 : fc === '!region' ? d.cargosDetalle.some(c => c.cargo === DELEGADA && !c.region) : fc.startsWith('c:') ? d.cargosDetalle.some(c => c.cargo === fc.slice(2)) : d.cargos.includes(fc))) &&
@@ -274,7 +274,7 @@ function pintar() {
       <td class="fecha">${esc(d.rut)}</td>
       <td>${d.empresa ? `<span class="corto" title="${esc(d.empresa)}">${esc(d.empresa)}</span>` : ''}</td>
       <td><span class="corto corto-reg" title="${esc([d.region, d.comuna].filter(Boolean).join(' · '))}">${esc(d.region)}</span>${d.comuna ? `<small class="corto corto-reg">${esc(d.comuna)}</small>` : ''}</td>
-      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${porEnviarDirectorio(d) ? '<span class="chip nuevo" title="Identidad verificada: falta enviarle la validación del Directorio">Falta enviar al Directorio</span><button class="btn-peq enviar-carta" data-enviar-directorio="' + d.fila + '" title="Prepara los correos para los directores sin abrir la ficha">✉ Enviar a los directores</button>' : ''}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
+      <td><span class="chip ${claseEtapa(d.etapa)}">${esc(d.etapa)}</span>${chipDirectorio(d)}${porEnviarDirectorio(d) ? '<span class="chip nuevo" title="Identidad verificada: falta enviarle la validación del Directorio">Falta enviar al Directorio</span><button class="btn-peq enviar-carta" data-enviar-directorio="' + d.fila + '" title="Prepara los correos para los directores sin abrir la ficha">✉ Enviar a los directores</button>' : ''}${d.etapa === 'Pendiente de carta' && d.pasos.cartaEnviada && !d.inactiva ? `<span class="chip ok" title="Carta anotada como enviada el ${esc(fechaCL(d.pasos.cartaEnviada.fecha))}">✉ Enviada ${esc(fechaCL(d.pasos.cartaEnviada.fecha).slice(0, 5))}</span>` : ''}${d.etapa === 'Pendiente de carta' && !d.pasos.cartaEnviada && !d.inactiva && !d.duplicadaDe && d.correo ? `<button class="btn-peq enviar-carta" data-enviar-carta="${d.fila}" title="Prepara la carta y el correo sin abrir la ficha">✉ Enviar carta</button>` : ''}${d.fundadora ? '<span class="chip fund" title="Socia fundadora">Fundadora</span>' : ''}${d.cargos.map(c => `<span class="chip${/falta la región$/.test(c) ? ' mal' : ''}">${esc(c)}</span>`).join('')}${chipsComisionLista(d, fcom)}</td>
       <td class="fecha">${puntosPasos(d)}</td>
       <td>${esc(pagoTexto(d)) || '<span class="nada">—</span>'}</td>
       <td>${d.alertas.length ? `<span class="chip ${d.datosPedidos ? 'pedido' : 'mal'}" title="${esc((d.datosPedidos ? 'Datos pedidos el ' + fechaCL(d.datosPedidos) + '.\n' : '') + d.alertas.join('\n'))}">⚠ ${d.alertas.length}</span>${puedePedirDatos(d) ? `<button class="btn-peq enviar-carta" data-pedir-datos="${d.fila}" title="Prepara el mensaje para que confirme los datos con alerta, sin abrir la ficha">${d.datosPedidos ? '↻ Volver a pedir' : '✉ Pedir datos'}</button>` : ''}` : '<span class="chip ok">OK</span>'}</td>
@@ -284,48 +284,63 @@ function pintar() {
 
 // ---- Enviar (o reenviar) la carta a todas las de la lista, una por una ----
 // Pueden recibirla quienes están en «Pendiente de carta», tienen un correo válido y todavía no subieron documentos.
-const elegibleCartaMasiva = d => !d.inactiva && !d.duplicadaDe && d.etapa === 'Pendiente de carta' && !(d.docs && d.docs.recibidos) && !!construirCorreoCarta(d, undefined, true).destinatario;
-let masivo = null; // { cola: [{ d, estado: 'espera'|'listo'|'error', error }], ocupado }
+const enviadaHoy = d => !!d.pasos.cartaEnviada && d.pasos.cartaEnviada.fecha === hoyLocalISO();
+const elegibleCartaMasiva = d => !enviadaHoy(d) && !d.inactiva && !d.duplicadaDe && d.etapa === 'Pendiente de carta' && !(d.docs && d.docs.recibidos) && !!construirCorreoCarta(d, undefined, true).destinatario;
+let masivo = null; // { cola: [{ d, estado: 'espera'|'listo'|'enviado'|'error', error }], ocupado, enviando, detener }
+const hechoMasivo = x => x.estado === 'listo' || x.estado === 'enviado';
 function pintarMasivo() {
   if (!masivo) return;
-  const { cola, ocupado } = masivo;
-  const hechos = cola.filter(x => x.estado === 'listo').length, faltan = cola.length - hechos;
-  let h = faltan
-    ? `<p class="sub" style="margin:0 0 8px"><b>${hechos} de ${cola.length}</b> abiertas en Gmail. Pulsa <b>Abrir la siguiente</b>, revisa el correo en la pestaña nueva y envíalo; después vuelve aquí para la siguiente.</p>
-       <button class="btn-peq" data-masivo="siguiente"${ocupado ? ' disabled' : ''}>${ocupado ? 'Preparando…' : '✉ Abrir la siguiente en Gmail (' + faltan + ')'}</button>`
-    : `<p><b>✔ Listo: se abrieron en Gmail las ${cola.length} cartas.</b> Revisa que hayas pulsado Enviar en cada una.</p>`;
-  h += '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + cola.map((x, i) => `<div class="hist-fila"><b>${esc(x.d.nombre)}</b> · <span class="sub">${esc(x.d.correo)}</span>${x.d.pasos.cartaEnviada ? ' <span class="chip">ya se le envió antes</span>' : ''}
-      ${x.estado === 'listo' ? '<span class="chip ok">✓ Gmail abierto</span>' : ''}${x.estado === 'error' ? `<span class="chip mal">${esc(x.error)}</span>` : ''}
-      <button class="${x.estado === 'listo' ? 'sec ' : ''}btn-peq" data-masivo="uno" data-i="${i}"${ocupado ? ' disabled' : ''}>${x.estado === 'listo' ? '↻ Abrir de nuevo' : 'Abrir'}</button></div>`).join('') + '</div>';
+  const { cola, ocupado, enviando } = masivo;
+  const hechos = cola.filter(hechoMasivo).length, faltan = cola.length - hechos;
+  let h;
+  if (enviando) {
+    h = `<p style="margin:0 0 8px"><b>Enviando… ${cola.filter(x => x.estado === 'enviado').length} de ${cola.length}.</b> No cierres esta ventana.</p><button class="sec btn-peq" data-masivo="detener"${masivo.detener ? ' disabled' : ''}>${masivo.detener ? 'Deteniendo…' : 'Detener'}</button>`;
+  } else if (faltan) {
+    h = `<p class="sub" style="margin:0 0 8px"><b>${hechos} de ${cola.length}</b> listas. Elige cómo enviarlas:</p>
+       <button class="btn-peq" data-masivo="todas"${ocupado ? ' disabled' : ''} title="La app envía los correos sola, desde la cuenta de socias, uno tras otro">⚡ Enviar ahora los ${faltan} correos</button>
+       <button class="sec btn-peq" data-masivo="siguiente"${ocupado ? ' disabled' : ''} title="Abre Gmail con el correo escrito; tú revisas y pulsas Enviar">✉ Abrir la siguiente en Gmail</button>`;
+  } else {
+    h = `<p><b>✔ Listo: ${cola.length === 1 ? 'se procesó la carta' : 'se procesaron las ' + cola.length + ' cartas'}.</b>${cola.some(x => x.estado === 'listo') ? ' Las que se abrieron en Gmail quedan por enviar desde allí.' : ''}</p>`;
+  }
+  h += '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + cola.map((x, i) => `<div class="hist-fila"><b>${esc(x.d.nombre)}</b> · <span class="sub">${esc(x.d.correo)}</span>${x.d.pasos.cartaEnviada && !hechoMasivo(x) ? ' <span class="chip">ya se le envió antes</span>' : ''}
+      ${x.estado === 'enviado' ? '<span class="chip ok">✓ Enviado</span>' : ''}${x.estado === 'listo' ? '<span class="chip ok">✓ Gmail abierto</span>' : ''}${x.estado === 'error' ? `<span class="chip mal">${esc(x.error)}</span>` : ''}
+      ${enviando || x.estado === 'enviado' ? '' : `<button class="${x.estado === 'listo' ? 'sec ' : ''}btn-peq" data-masivo="uno" data-i="${i}"${ocupado ? ' disabled' : ''}>${x.estado === 'listo' ? '↻ Abrir de nuevo' : 'Abrir en Gmail'}</button>`}</div>`).join('') + '</div>';
   $('masivoCuerpo').innerHTML = h;
 }
 function abrirMasivo() {
   if (!puedeSalir()) return;
   const lista = visiblesActuales().filter(elegibleCartaMasiva);
   if (!lista.length) return mostrar('No hay postulantes en la lista a quienes enviar la carta.', true);
-  masivo = { cola: lista.map(d => ({ d, estado: 'espera', error: '' })), ocupado: false };
+  masivo = { cola: lista.map(d => ({ d, estado: 'espera', error: '' })), ocupado: false, enviando: false, detener: false };
   $('masivoTitulo').textContent = 'Enviar la carta a ' + lista.length + (lista.length === 1 ? ' postulante' : ' postulantes');
   pintarMasivo();
   $('modalMasivo').hidden = false;
 }
-// Crea el enlace, abre Gmail con el correo listo y anota «Carta enviada» (si no estaba). La ventana se abre dentro del clic para que no la bloqueen.
+// Crea el enlace nuevo (y deja lista su carta) y arma el correo.
+async function prepararCorreoMasivo(x) {
+  const r = await post('/api/enlace', { clave: x.d.clave, fecha: true });
+  if (r.error) throw new Error(r.error);
+  const recordatorio = !!(x.d.pasos.cartaEnviada || (x.d.enlace && x.d.enlace.estado));
+  const correo = construirCorreoCarta(x.d, undefined, true, recordatorio);
+  return { correo, cuerpo: correo.cuerpo.split(MARCA_ENLACE).join(r.url), recordatorio };
+}
+async function anotarEnvioMasivo(x, nota) {
+  if (x.d.pasos.cartaEnviada) return;
+  const p = await post('/api/paso', { clave: x.d.clave, paso: 'cartaEnviada', hecho: true, fecha: hoyLocalISO(), nota });
+  if (!p.error) x.d.pasos.cartaEnviada = { fecha: hoyLocalISO(), nota };
+}
+// Abre Gmail con el correo listo. La ventana se abre dentro del clic para que no la bloqueen.
 async function enviarUnaMasivo(i) {
   const m = masivo, x = m.cola[i];
-  if (!x || m.ocupado) return;
+  if (!x || m.ocupado || m.enviando) return;
   const ventana = window.open('', '_blank');
   if (ventana) ventana.opener = null;
   m.ocupado = true; pintarMasivo();
   try {
-    const r = await post('/api/enlace', { clave: x.d.clave, fecha: true });
-    if (r.error) throw new Error(r.error);
-    const recordatorio = !!(x.d.pasos.cartaEnviada || (x.d.enlace && x.d.enlace.estado));
-    const correo = construirCorreoCarta(x.d, undefined, true, recordatorio);
+    const { correo, cuerpo } = await prepararCorreoMasivo(x);
     if (!ventana) throw new Error('El navegador bloqueó la ventana nueva: permite las ventanas emergentes para esta página.');
-    ventana.location.href = urlGmail({ destinatario: correo.destinatario, asunto: correo.asunto, cuerpo: correo.cuerpo.split(MARCA_ENLACE).join(r.url), cuenta: correoEnvio, copia: remitente });
-    if (!x.d.pasos.cartaEnviada) {
-      const p = await post('/api/paso', { clave: x.d.clave, paso: 'cartaEnviada', hecho: true, fecha: hoyLocalISO(), nota: 'correo abierto desde la app' });
-      if (!p.error) x.d.pasos.cartaEnviada = { fecha: hoyLocalISO(), nota: '' };
-    }
+    ventana.location.href = urlGmail({ destinatario: correo.destinatario, asunto: correo.asunto, cuerpo, cuenta: correoEnvio, copia: remitente });
+    await anotarEnvioMasivo(x, 'correo abierto desde la app');
     x.estado = 'listo'; x.error = '';
   } catch (e) {
     if (ventana) ventana.close();
@@ -334,12 +349,44 @@ async function enviarUnaMasivo(i) {
   m.ocupado = false;
   if (masivo === m) pintarMasivo();
 }
+// Envía solas todas las que faltan, una tras otra. Si el problema es de la cuenta de correo (clave mala, sin configurar), se detiene.
+async function enviarTodasMasivo() {
+  const m = masivo;
+  if (!m || m.ocupado || m.enviando) return;
+  const pendientes = m.cola.filter(x => !hechoMasivo(x));
+  if (!pendientes.length) return;
+  if (!confirm('Se enviarán ' + pendientes.length + (pendientes.length === 1 ? ' correo' : ' correos') + ' desde la cuenta de socias, uno por persona, cada uno con su enlace nuevo.\n\nNo se puede deshacer. ¿Enviar ahora?')) return;
+  m.enviando = true; m.detener = false; pintarMasivo();
+  let detenidoPor = '';
+  for (const x of pendientes) {
+    if (masivo !== m || m.detener) break;
+    try {
+      const { correo, cuerpo, recordatorio } = await prepararCorreoMasivo(x);
+      const r = await post('/api/correo/enviar', { clave: x.d.clave, asunto: correo.asunto, cuerpo, tipo: recordatorio ? 'recordatorio de carta' : 'carta' });
+      if (r.error) { const e = new Error(r.error); e.general = /configurar|contraseña|sesión|permiso/i.test(r.error); throw e; }
+      await anotarEnvioMasivo(x, 'correo enviado desde la app');
+      x.estado = 'enviado'; x.error = '';
+    } catch (e) {
+      x.estado = 'error'; x.error = e.message || 'No se pudo enviar.';
+      if (e.general) { detenidoPor = x.error; break; }
+    }
+    if (masivo === m) pintarMasivo();
+  }
+  m.enviando = false;
+  if (masivo !== m) return;
+  pintarMasivo();
+  const ok = m.cola.filter(x => x.estado === 'enviado').length, mal = m.cola.filter(x => x.estado === 'error').length;
+  if (detenidoPor) mostrar('Se detuvo el envío: ' + detenidoPor, true);
+  else mostrar(ok + (ok === 1 ? ' correo enviado' : ' correos enviados') + (mal ? ' · ' + mal + ' con error (quedaron marcados en la lista; puedes reintentarlos).' : '.'), !!mal);
+}
 async function cerrarMasivo() {
   if (!masivo) { $('modalMasivo').hidden = true; return; }
-  const abiertas = masivo.cola.filter(x => x.estado === 'listo').length;
+  if (masivo.enviando && !confirm('Se están enviando los correos. Si cierras ahora se detiene el envío. ¿Cerrar?')) return;
+  const hechas = masivo.cola.filter(hechoMasivo).length;
+  masivo.detener = true;
   masivo = null; $('modalMasivo').hidden = true;
-  if (abiertas) {
-    mostrar('✓ Se abrieron en Gmail ' + abiertas + (abiertas === 1 ? ' carta' : ' cartas') + '. Quedaron anotadas como enviadas en cada ficha.');
+  if (hechas) {
+    mostrar('✓ ' + hechas + (hechas === 1 ? ' carta procesada' : ' cartas procesadas') + '. Quedaron anotadas como enviadas en cada ficha.');
     const r = await fetch('/api/postulaciones');
     if (r.ok) cargar(await r.json(), true);
   }
@@ -349,8 +396,11 @@ $('modalMasivo').addEventListener('click', e => {
   if (e.target === $('modalMasivo') || e.target.closest('#cerrarMasivo')) return cerrarMasivo();
   const b = e.target.closest('[data-masivo]');
   if (!b || !masivo) return;
-  if (b.dataset.masivo === 'uno') enviarUnaMasivo(Number(b.dataset.i));
-  else { const i = masivo.cola.findIndex(x => x.estado !== 'listo'); if (i >= 0) enviarUnaMasivo(i); }
+  const q = b.dataset.masivo;
+  if (q === 'uno') enviarUnaMasivo(Number(b.dataset.i));
+  else if (q === 'todas') enviarTodasMasivo();
+  else if (q === 'detener') { masivo.detener = true; pintarMasivo(); }
+  else { const i = masivo.cola.findIndex(x => !hechoMasivo(x)); if (i >= 0) enviarUnaMasivo(i); }
 });
 
 // ---- Descargar en Excel lo que está filtrado en pantalla ----
