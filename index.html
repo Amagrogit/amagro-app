@@ -172,7 +172,7 @@
   /* La categoría Directiva solo consulta: se esconde todo lo que cambia algo. */
   body.lectura #actualizar, body.lectura #configurar, body.lectura #subirCsv, body.lectura #respaldo, body.lectura #importarSocias, body.lectura #verUsuarias, body.lectura #verDuplicados, body.lectura #verComisiones, body.lectura #verPago, body.lectura #verGrupo, body.lectura #verDirectores, body.lectura .dir-edicion, body.lectura .comisiones-edicion, body.lectura .cargos-edicion, body.lectura #abrirBienvenida, body.lectura #sigCarta, body.lectura #sigDirectorio, body.lectura #abrirNoAcep, body.lectura .col-sel, body.lectura #barraSeleccion, body.lectura #alternarActiva, body.lectura #quitarDuplicada,
   body.lectura #editarFicha, body.lectura #restaurarEd, body.lectura #prepararMensaje, body.lectura #verCarta, body.lectura .enviar-carta,
-  body.lectura [data-borrar-carnet], body.lectura #pendientes, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
+  body.lectura #enviarCartaTodas, body.lectura [data-borrar-carnet], body.lectura #pendientes, body.lectura #avisoCorrecciones, body.lectura #avisoMigracion { display:none !important; }
   body.lectura .paso-fila input { pointer-events:none; opacity:.8; }
   .cerrar-panel { position:absolute; top:8px; right:10px; z-index:5; background:#fff; color:var(--suave); border:1px solid var(--borde); border-radius:6px; padding:3px 10px; font-size:12px; cursor:pointer; }
   .cerrar-panel:hover { color:var(--texto); border-color:var(--suave); }
@@ -608,6 +608,7 @@
     <select id="filtroGrupo" title="Filtrar por el grupo de WhatsApp de las socias"><option value="">Grupo WhatsApp: todas</option><option value="sin">Sin invitar</option><option value="invitada">Invitadas (aún no entran)</option><option value="en">En el grupo</option></select>
     <select id="filtroPago" title="Filtrar por estado de la cuota"><option value="">Todos los pagos</option><option value="al-dia">Al día</option><option value="pendiente">Pendiente</option><option value="atrasada">Atrasada</option></select>
     <select id="region"><option value="">Todas las regiones</option></select>
+    <button class="btn-peq" id="enviarCartaTodas" type="button" hidden title="Prepara, una por una, la carta con enlace nuevo para las postulantes de esta lista que aún no han subido sus documentos">✉ Enviar carta a todas</button>
     <button class="sec btn-peq" id="exportarExcel" type="button" title="Descarga en una planilla de Excel lo que se ve ahora en la lista (con los filtros aplicados)">⬇ Descargar Excel</button>
     <datalist id="listaCargos"></datalist>
   </div>
@@ -805,11 +806,22 @@
   </div>
 </div>
 
+<div id="modalMasivo" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="masivoTitulo">
+  <div class="modal-caja">
+    <div class="modal-cab">
+      <h2 id="masivoTitulo">Enviar la carta a varias postulantes</h2>
+      <button class="cerrar" id="cerrarMasivo" aria-label="Cerrar">×</button>
+    </div>
+    <div id="masivoCuerpo"></div>
+    <p class="sub" style="margin:8px 0 0">La app no envía correos: cada uno se abre en Gmail (desde la cuenta de socias, con copia a socias) y tú pulsas Enviar. A cada persona se le crea un enlace nuevo; el anterior deja de servir.</p>
+  </div>
+</div>
+
 <script src="config.js?v=c8ec37a6"></script>
 <script src="app.js?v=4c89b33f"></script>
-<script src="mensaje.js?v=d2dacabf"></script>
+<script src="mensaje.js?v=d280613d"></script>
 <script src="sugerencias.js?v=d087c477"></script>
 <script src="planilla.js?v=8280509e"></script>
-<script src="ui.js?v=97641e2c"></script>
+<script src="ui.js?v=9876e9b2"></script>
 </body>
 </html>

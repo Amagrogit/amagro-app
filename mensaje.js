@@ -65,7 +65,7 @@
 
   // Correo que acompaña a la carta de solicitud de ingreso (el PDF se adjunta a mano: un enlace de correo no puede adjuntar).
   const MARCA_ENLACE = '[ENLACE DE SUBIDA]';
-  function construirCorreoCarta(d, firma = FIRMA_EQUIPO, conEnlace = false) {
+  function construirCorreoCarta(d, firma = FIRMA_EQUIPO, conEnlace = false, recordatorio = false) {
     const correoInvalido = !d.correo || d.alertas.some(a => /^Correo inválido/.test(a));
     const primerNombre = capitalizar(String(d.nombre || '').trim().split(/\s+/)[0]);
     if (conEnlace) {
@@ -73,11 +73,13 @@
       return {
         correoInvalido,
         destinatario: correoInvalido ? '' : d.correo,
-        asunto: conNombre('AMAGRO AG · Carta de solicitud de ingreso', d.nombre),
+        asunto: conNombre(recordatorio ? 'Recordatorio · AMAGRO AG · Carta de solicitud de ingreso' : 'AMAGRO AG · Carta de solicitud de ingreso', d.nombre),
         cuerpo: [
           `Hola ${primerNombre || 'postulante'},`,
           '',
-          'Gracias por postular a AMAGRO AG. Para continuar con tu solicitud, por favor:',
+          recordatorio
+            ? 'Te escribimos de AMAGRO AG: aún no recibimos tu carta de solicitud de ingreso firmada ni la copia de tu carnet. Te dejamos un enlace nuevo (reemplaza al que te enviamos antes, que ya no sirve). Para continuar con tu solicitud:'
+            : 'Gracias por postular a AMAGRO AG. Para continuar con tu solicitud, por favor:',
           '',
           '1. Entra a este enlace, desde el computador o el celular:',
           '',

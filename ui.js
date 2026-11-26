@@ -262,6 +262,9 @@ function pintar() {
   $('resumen').innerHTML = resumenPestana(vis);
   $('exportarExcel').textContent = '⬇ Descargar Excel (' + vis.length + ')';
   $('exportarExcel').disabled = !vis.length;
+  const elegibles = pestana === 'postulantes' ? vis.filter(elegibleCartaMasiva) : [];
+  $('enviarCartaTodas').hidden = !elegibles.length || !subidaDisponible;
+  $('enviarCartaTodas').textContent = '✉ Enviar carta a todas (' + elegibles.length + ')';
   $('filas').innerHTML = vis.length ? vis.map(d => pestana === 'socias' ? filaSocia(d) : pestana === 'otras' ? filaOtra(d) : `
     <tr class="${d.fila === seleccion ? 'sel' : ''}${d.inactiva ? ' inactiva' : ''}">
       ${celdasInicio(d)}
@@ -278,6 +281,77 @@ function pintar() {
     </tr>`).join('') : '<tr><td colspan="' + (pestana === 'postulantes' ? 10 : pestana === 'socias' ? 9 : 8) + '" class="vacio">Sin resultados</td></tr>';
   actualizarSeleccion(vis);
 }
+
+// ---- Enviar (o reenviar) la carta a todas las de la lista, una por una ----
+// Pueden recibirla quienes están en «Pendiente de carta», tienen un correo válido y todavía no subieron documentos.
+const elegibleCartaMasiva = d => !d.inactiva && !d.duplicadaDe && d.etapa === 'Pendiente de carta' && !(d.docs && d.docs.recibidos) && !!construirCorreoCarta(d, undefined, true).destinatario;
+let masivo = null; // { cola: [{ d, estado: 'espera'|'listo'|'error', error }], ocupado }
+function pintarMasivo() {
+  if (!masivo) return;
+  const { cola, ocupado } = masivo;
+  const hechos = cola.filter(x => x.estado === 'listo').length, faltan = cola.length - hechos;
+  let h = faltan
+    ? `<p class="sub" style="margin:0 0 8px"><b>${hechos} de ${cola.length}</b> abiertas en Gmail. Pulsa <b>Abrir la siguiente</b>, revisa el correo en la pestaña nueva y envíalo; después vuelve aquí para la siguiente.</p>
+       <button class="btn-peq" data-masivo="siguiente"${ocupado ? ' disabled' : ''}>${ocupado ? 'Preparando…' : '✉ Abrir la siguiente en Gmail (' + faltan + ')'}</button>`
+    : `<p><b>✔ Listo: se abrieron en Gmail las ${cola.length} cartas.</b> Revisa que hayas pulsado Enviar en cada una.</p>`;
+  h += '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + cola.map((x, i) => `<div class="hist-fila"><b>${esc(x.d.nombre)}</b> · <span class="sub">${esc(x.d.correo)}</span>${x.d.pasos.cartaEnviada ? ' <span class="chip">ya se le envió antes</span>' : ''}
+      ${x.estado === 'listo' ? '<span class="chip ok">✓ Gmail abierto</span>' : ''}${x.estado === 'error' ? `<span class="chip mal">${esc(x.error)}</span>` : ''}
+      <button class="${x.estado === 'listo' ? 'sec ' : ''}btn-peq" data-masivo="uno" data-i="${i}"${ocupado ? ' disabled' : ''}>${x.estado === 'listo' ? '↻ Abrir de nuevo' : 'Abrir'}</button></div>`).join('') + '</div>';
+  $('masivoCuerpo').innerHTML = h;
+}
+function abrirMasivo() {
+  if (!puedeSalir()) return;
+  const lista = visiblesActuales().filter(elegibleCartaMasiva);
+  if (!lista.length) return mostrar('No hay postulantes en la lista a quienes enviar la carta.', true);
+  masivo = { cola: lista.map(d => ({ d, estado: 'espera', error: '' })), ocupado: false };
+  $('masivoTitulo').textContent = 'Enviar la carta a ' + lista.length + (lista.length === 1 ? ' postulante' : ' postulantes');
+  pintarMasivo();
+  $('modalMasivo').hidden = false;
+}
+// Crea el enlace, abre Gmail con el correo listo y anota «Carta enviada» (si no estaba). La ventana se abre dentro del clic para que no la bloqueen.
+async function enviarUnaMasivo(i) {
+  const m = masivo, x = m.cola[i];
+  if (!x || m.ocupado) return;
+  const ventana = window.open('', '_blank');
+  if (ventana) ventana.opener = null;
+  m.ocupado = true; pintarMasivo();
+  try {
+    const r = await post('/api/enlace', { clave: x.d.clave, fecha: true });
+    if (r.error) throw new Error(r.error);
+    const recordatorio = !!(x.d.pasos.cartaEnviada || (x.d.enlace && x.d.enlace.estado));
+    const correo = construirCorreoCarta(x.d, undefined, true, recordatorio);
+    if (!ventana) throw new Error('El navegador bloqueó la ventana nueva: permite las ventanas emergentes para esta página.');
+    ventana.location.href = urlGmail({ destinatario: correo.destinatario, asunto: correo.asunto, cuerpo: correo.cuerpo.split(MARCA_ENLACE).join(r.url), cuenta: correoEnvio, copia: remitente });
+    if (!x.d.pasos.cartaEnviada) {
+      const p = await post('/api/paso', { clave: x.d.clave, paso: 'cartaEnviada', hecho: true, fecha: hoyLocalISO(), nota: 'correo abierto desde la app' });
+      if (!p.error) x.d.pasos.cartaEnviada = { fecha: hoyLocalISO(), nota: '' };
+    }
+    x.estado = 'listo'; x.error = '';
+  } catch (e) {
+    if (ventana) ventana.close();
+    x.estado = 'error'; x.error = e.message || 'No se pudo preparar el correo.';
+  }
+  m.ocupado = false;
+  if (masivo === m) pintarMasivo();
+}
+async function cerrarMasivo() {
+  if (!masivo) { $('modalMasivo').hidden = true; return; }
+  const abiertas = masivo.cola.filter(x => x.estado === 'listo').length;
+  masivo = null; $('modalMasivo').hidden = true;
+  if (abiertas) {
+    mostrar('✓ Se abrieron en Gmail ' + abiertas + (abiertas === 1 ? ' carta' : ' cartas') + '. Quedaron anotadas como enviadas en cada ficha.');
+    const r = await fetch('/api/postulaciones');
+    if (r.ok) cargar(await r.json(), true);
+  }
+}
+$('enviarCartaTodas').addEventListener('click', abrirMasivo);
+$('modalMasivo').addEventListener('click', e => {
+  if (e.target === $('modalMasivo') || e.target.closest('#cerrarMasivo')) return cerrarMasivo();
+  const b = e.target.closest('[data-masivo]');
+  if (!b || !masivo) return;
+  if (b.dataset.masivo === 'uno') enviarUnaMasivo(Number(b.dataset.i));
+  else { const i = masivo.cola.findIndex(x => x.estado !== 'listo'); if (i >= 0) enviarUnaMasivo(i); }
+});
 
 // ---- Descargar en Excel lo que está filtrado en pantalla ----
 const TEXTO_ENLACE = { 'sin-abrir': 'Sin abrir', abierto: 'Abrió el enlace, sin subir', vencido: 'Vencido', subido: 'Subió documentos' };
@@ -1523,6 +1597,7 @@ $('cartaConEnlace').addEventListener('change', () => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (!$('modalDoc').hidden) return cerrarDocumento();
+  if (!$('modalMasivo').hidden) return cerrarMasivo();
   if (!$('modalDirectorio').hidden) return cerrarModalDirectorio();
   if (!$('modalBienvenida').hidden) return cerrarModalBienvenida();
   if (!$('modalNoAcep').hidden) return cerrarModalNoAcep();
@@ -2227,7 +2302,7 @@ async function consultarPendientes() {
     actualizarAvisoCorrecciones(p.correcciones || 0);
     if (!$('panelCorrecciones').hidden && firmaPendientes !== null && p.firma !== firmaPendientes) cargarCorrecciones();
     const cambio = firmaPendientes !== null && p.firma !== firmaPendientes;
-    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden || !$('modalBienvenida').hidden || !$('modalDirectorio').hidden;
+    const ocupada = editando || !$('modalCarta').hidden || !$('modalMensaje').hidden || !$('modalNoAcep').hidden || !$('modalBienvenida').hidden || !$('modalDirectorio').hidden || !$('modalMasivo').hidden;
     if (cambio && !ocupada) {
       const nuevos = p.pendientes > datos.filter(x => x.pendienteRevision).length;
       const d = await fetch('/api/postulaciones');
