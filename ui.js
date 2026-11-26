@@ -324,10 +324,18 @@ async function prepararCorreoMasivo(x) {
   const correo = construirCorreoCarta(x.d, undefined, true, recordatorio);
   return { correo, cuerpo: correo.cuerpo.split(MARCA_ENLACE).join(r.url), recordatorio };
 }
+// Anota «Carta enviada» con la fecha de hoy. Si ya estaba anotada de antes, es un reenvío: la fecha pasa a ser la de hoy (así el contador de días
+// parte de nuevo) y en la nota queda el primer envío.
+async function anotarCartaHoy(clave, anterior, nota) {
+  const hoy = hoyLocalISO();
+  if (anterior && anterior.fecha >= hoy) return { ok: true };
+  const primero = anterior ? (/primer envío/.test(anterior.nota || '') ? anterior.nota : 'Reenviada · primer envío ' + fechaCL(anterior.fecha)) : nota;
+  const p = await post('/api/paso', { clave, paso: 'cartaEnviada', hecho: true, fecha: hoy, nota: primero.slice(0, 300) });
+  return p.error ? p : { ok: true, paso: { fecha: hoy, nota: primero } };
+}
 async function anotarEnvioMasivo(x, nota) {
-  if (x.d.pasos.cartaEnviada) return;
-  const p = await post('/api/paso', { clave: x.d.clave, paso: 'cartaEnviada', hecho: true, fecha: hoyLocalISO(), nota });
-  if (!p.error) x.d.pasos.cartaEnviada = { fecha: hoyLocalISO(), nota };
+  const r = await anotarCartaHoy(x.d.clave, x.d.pasos.cartaEnviada, nota);
+  if (r.paso) x.d.pasos.cartaEnviada = r.paso;
 }
 // Abre Gmail con el correo listo. La ventana se abre dentro del clic para que no la bloqueen.
 async function enviarUnaMasivo(i) {
@@ -813,8 +821,10 @@ function configurarRegistroEnvio() {
 async function anotarEnvio() {
   const actual = cartaActual;
   if (!actual) return false;
-  if (!actual.d.pasos.cartaEnviada) {
-    const r = await guardarPaso('cartaEnviada', true, { fecha: hoyLocalISO(), nota: 'correo abierto desde la app' });
+  const previo = actual.d.pasos.cartaEnviada;
+  if (!previo || previo.fecha < hoyLocalISO()) { // primera vez, o reenvío: la fecha pasa a ser la de hoy y la nota guarda el primer envío
+    const nota = previo ? (/primer envío/.test(previo.nota || '') ? previo.nota : 'Reenviada · primer envío ' + fechaCL(previo.fecha)) : 'correo abierto desde la app';
+    const r = await guardarPaso('cartaEnviada', true, { fecha: hoyLocalISO(), nota });
     if (!r) return false;
     if (cartaActual !== actual) return true;
     actual.d = datos.find(x => x.fila === seleccion) || actual.d; // la ficha se volvió a dibujar con los datos nuevos
@@ -1402,6 +1412,16 @@ $('selTodas').addEventListener('change', () => {
   const vis = visiblesActuales();
   vis.forEach(d => ($('selTodas').checked ? seleccionadas.add(d.clave) : seleccionadas.delete(d.clave)));
   pintar();
+});
+$('anotarEnviadaHoy').addEventListener('click', async () => {
+  const lista = datos.filter(d => seleccionadas.has(d.clave) && !d.inactiva);
+  if (!lista.length) return;
+  if (!confirm('Se anotará la carta como enviada hoy (' + fechaCL(hoyLocalISO()) + ') a ' + lista.length + (lista.length === 1 ? ' persona' : ' personas') + '. El primer envío queda en la nota. ¿Seguir?')) return;
+  let fallidas = 0;
+  for (const d of lista) { const r = await anotarCartaHoy(d.clave, d.pasos.cartaEnviada, 'enviada manualmente'); if (r.error) fallidas++; }
+  seleccionadas.clear();
+  const r = await fetch('/api/postulaciones'); if (r.ok) cargar(await r.json(), true);
+  mostrar('✓ Se anotó el envío de hoy en ' + (lista.length - fallidas) + (lista.length - fallidas === 1 ? ' ficha' : ' fichas') + (fallidas ? ' (' + fallidas + ' no se pudieron guardar: reintenta)' : '') + '.', !!fallidas);
 });
 $('marcarNoActivas').addEventListener('click', () => cambiarActivas([...seleccionadas], false));
 $('marcarActivas').addEventListener('click', () => cambiarActivas([...seleccionadas], true));
